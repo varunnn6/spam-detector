@@ -14,7 +14,7 @@ st.title("Spam Shield 📩")
 # Load Trained Machine Learning Model
 @st.cache_resource
 def load_model():
-    return joblib.load('/Users/varunmalik/Downloads/spam_classifier.pkl')
+    return joblib.load('spam_classifier.pkl')
 
 model = load_model()
 
