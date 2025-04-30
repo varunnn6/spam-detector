@@ -109,7 +109,7 @@ def parse_phone_number(phone_number):
 # Load SMS Dataset
 @st.cache_data
 def load_data():
-    df = pd.read_csv("spam.csv")
+    df = pd.read_csv("Spam.csv")
     df = df.drop(['Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4'], axis=1)
     df = df.rename(columns={'v1': 'label', 'v2': 'Text'})
     df['label_enc'] = df['label'].map({'ham': 0, 'spam': 1})
