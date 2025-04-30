@@ -14,7 +14,7 @@ st.title("Spam Shield 📩")
 # Load Trained Machine Learning Model
 @st.cache_resource
 def load_model():
-    return joblib.load('spam_classifier.pkl')
+    return joblib.load('spam_classifier.pkl') 
 
 model = load_model()
 
@@ -109,9 +109,9 @@ def parse_phone_number(phone_number):
 # Load SMS Dataset
 @st.cache_data
 def load_data():
-    df = pd.read_csv("Spam.csv")
-    df = df.drop(['Unnamed: 2', 'Unnamed: 3', 'Unnamed: 4'], axis=1)
-    df = df.rename(columns={'v1': 'label', 'v2': 'Text'})
+    df = pd.read_csv("Spam.csv", encoding='latin-1')
+    df = df.iloc[:, :2]  # Only keep first two columns
+    df.columns = ['label', 'Text']  # Rename columns
     df['label_enc'] = df['label'].map({'ham': 0, 'spam': 1})
     return df
 
