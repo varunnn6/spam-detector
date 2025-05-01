@@ -190,7 +190,7 @@ if st.button("Check Number"):
             st.write(f"🌎 **Country:** {country}")
             st.write(f"🔍 **Classification:** {classification}")
 
-# SMS Spam Detection with Rule-Based Filtering
+# SMS Spam Detection with Refined Rule-Based Filtering
 st.subheader("📩 SMS Spam Detector")
 user_message = st.text_area("Enter SMS text:")
 
@@ -200,6 +200,9 @@ SPAM_KEYWORDS = [
     "win", "congratulations", "money", "rupee", "reward", "lottery"
 ]
 
+# Define trusted sources (e.g., banks)
+TRUSTED_SOURCES = ["-SBI", "-HDFC", "-ICICI"]
+
 if st.button("Check SMS"):
     if not user_message.strip():
         st.warning("Please enter a message.")
@@ -207,21 +210,29 @@ if st.button("Check SMS"):
         # Convert message to lowercase for keyword matching
         message_lower = user_message.lower()
         
-        # Rule-based check for spam keywords
-        is_spam_by_rule = any(keyword in message_lower for keyword in SPAM_KEYWORDS)
+        # Check if message is from a trusted source
+        is_trusted = any(source in user_message for source in TRUSTED_SOURCES)
+        
+        # Count spam keywords
+        spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
         
         # Vectorize the input using the loaded TF-IDF vectorizer
         user_message_vectorized = vectorizer.transform([user_message])
         prediction = model.predict(user_message_vectorized)[0]
         
-        # Combine model prediction with rule-based check
-        # If either the model OR the rule-based check flags it as spam, classify it as spam
-        result = "🚨 Spam" if prediction == 1 or is_spam_by_rule else "✅ Not Spam"
+        # Refined classification logic
+        if is_trusted and spam_keyword_count <= 1:
+            result = "✅ Not Spam"  # Trust bank messages with 1 or fewer spam keywords
+        elif spam_keyword_count >= 2 or prediction == 1:
+            result = "🚨 Spam"  # Spam if 2+ keywords or model predicts spam
+        else:
+            result = "✅ Not Spam"
         
         # Display the result
         st.write(f"🔍 **Classification:** {result}")
-        # Optional: Show if the rule-based check triggered
-        
+        # Optional: Show details if rule-based check triggered
+        if spam_keyword_count > 0 and result == "🚨 Spam":
+            st.write(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
 
 # Report a Spam Number
 st.subheader("📝 Report a Spam Number")
