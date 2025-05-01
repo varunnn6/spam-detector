@@ -182,8 +182,7 @@ if st.button("Check Number"):
             # Show provider with a note about MNP
             displayed_provider = api_provider if api_provider != "Unknown" else local_provider
             st.write(f"📶 **Service Provider:** {displayed_provider}")
-            if displayed_provider != "Unknown":
-                st.write("*Note:* The provider may have changed due to Mobile Number Portability (MNP). Verify with the number's owner if needed.")
+            
             st.write(f"🌍 **Region/City:** {location if location != 'Unknown' else region}")
             st.write(f"⏰ **Time Zone:** {time_zone}")
             st.write(f"📞 **Line Type:** {line_type}")
