@@ -11,12 +11,14 @@ from phonenumbers import carrier, geocoder, timezone
 # Streamlit App Title
 st.title("Spam Shield 📩")
 
-# Load Trained Machine Learning Model
+# Load Trained Machine Learning Model and Vectorizer
 @st.cache_resource
-def load_model():
-    return joblib.load('spam_classifier.pkl') 
+def load_model_and_vectorizer():
+    model = joblib.load('spam_classifier.pkl')
+    vectorizer = joblib.load('tfidf_vectorizer.pkl')
+    return model, vectorizer
 
-model = load_model()
+model, vectorizer = load_model_and_vectorizer()
 
 # Initialize and Load Spam Numbers from File
 SPAM_FILE = "spam_numbers.txt"
@@ -114,7 +116,6 @@ def load_data():
     df['label_enc'] = df['label'].map({'ham': 0, 'spam': 1})
     return df
 
-
 df = load_data()
 
 # Sidebar - Show Dataset
@@ -171,8 +172,6 @@ if st.button("Check Number"):
                 classification = "🚨 Spam"
             if local_provider == "Unknown" and api_provider == "Unknown":
                 classification = "🚨 Spam"  # Simplified logic without score
-            if model.predict([phone_number])[0] == 1:
-                classification = "🚨 Spam"
 
             # Final classification
             if special_classification:
@@ -191,17 +190,38 @@ if st.button("Check Number"):
             st.write(f"🌎 **Country:** {country}")
             st.write(f"🔍 **Classification:** {classification}")
 
-# SMS Spam Detection
+# SMS Spam Detection with Rule-Based Filtering
 st.subheader("📩 SMS Spam Detector")
 user_message = st.text_area("Enter SMS text:")
+
+# Define common spam keywords/phrases
+SPAM_KEYWORDS = [
+    "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
+    "win", "congratulations", "money", "rupee", "reward", "lottery"
+]
 
 if st.button("Check SMS"):
     if not user_message.strip():
         st.warning("Please enter a message.")
     else:
-        prediction = model.predict([user_message])[0]
-        result = "🚨 Spam" if prediction == 1 else "✅ Not Spam"
+        # Convert message to lowercase for keyword matching
+        message_lower = user_message.lower()
+        
+        # Rule-based check for spam keywords
+        is_spam_by_rule = any(keyword in message_lower for keyword in SPAM_KEYWORDS)
+        
+        # Vectorize the input using the loaded TF-IDF vectorizer
+        user_message_vectorized = vectorizer.transform([user_message])
+        prediction = model.predict(user_message_vectorized)[0]
+        
+        # Combine model prediction with rule-based check
+        # If either the model OR the rule-based check flags it as spam, classify it as spam
+        result = "🚨 Spam" if prediction == 1 or is_spam_by_rule else "✅ Not Spam"
+        
+        # Display the result
         st.write(f"🔍 **Classification:** {result}")
+        # Optional: Show if the rule-based check triggered
+        
 
 # Report a Spam Number
 st.subheader("📝 Report a Spam Number")
