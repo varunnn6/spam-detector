@@ -80,8 +80,7 @@ def get_numlookup_info(phone_number):
         url = f"https://api.numlookupapi.com/v1/validate/{phone_number}?apikey={API_KEY}"
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        data = response.json()
-        line 84 github 
+        data = response.json() 
          if displayed_provider != "Unknown":
                 st.write("Note: The provider may have changed due to Mobile Number Portability.")
         service_provider = data.get("carrier", "Unknown")
