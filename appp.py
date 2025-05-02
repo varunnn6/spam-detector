@@ -81,8 +81,8 @@ def get_numlookup_info(phone_number):
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         data = response.json() 
-         if displayed_provider != "Unknown":
-                st.write("Note: The provider may have changed due to Mobile Number Portability.")
+        if displayed_provider != "Unknown":
+                st.write("Note: The provider may have changed due to Mobile Number Portability.") 
         service_provider = data.get("carrier", "Unknown")
         location = data.get("location", "Unknown")  # Includes state/city if available
         line_type = data.get("line_type", "Unknown")
