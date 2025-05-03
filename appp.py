@@ -6,12 +6,12 @@ import joblib
 import requests
 from phonenumbers import carrier, geocoder, timezone
 
-# File paths
+# File paths (loaded from the repository via Streamlit Cloud)
 USERDATA_FILE = "userdata.txt"
 FEEDBACK_FILE = "feedback.txt"
 SPAM_FILE = "spam_numbers.txt"
 
-# Load session state
+# Initialize session state for data persistence during runtime
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
 if 'feedback' not in st.session_state:
@@ -19,41 +19,265 @@ if 'feedback' not in st.session_state:
 if 'spam_numbers' not in st.session_state:
     st.session_state.spam_numbers = set()
 
-# Load functions
+# Load data from files at startup
 def load_userdata():
-    data = {}
+    userdata = {}
     try:
         with open(USERDATA_FILE, 'r') as f:
             for line in f:
                 if line.strip():
                     name, phone = line.strip().split(',')
-                    data[phone] = name
+                    userdata[phone] = name
     except FileNotFoundError:
-        pass
-    data.update(st.session_state.userdata)
-    return data
+        pass  # File might not exist initially
+    userdata.update(st.session_state.userdata)
+    return userdata
 
 def load_feedback():
-    fb = []
+    feedback = []
     try:
         with open(FEEDBACK_FILE, 'r') as f:
-            fb = [line.strip() for line in f if line.strip()]
+            feedback = [line.strip() for line in f if line.strip()]
     except FileNotFoundError:
-        pass
-    fb.extend(st.session_state.feedback)
-    return list(set(fb))
+        pass  # File might not exist initially
+    feedback.extend(st.session_state.feedback)
+    return list(set(feedback))  # Remove duplicates
 
 def load_spam_numbers():
-    s = set()
+    spam_numbers = set()
     try:
         with open(SPAM_FILE, 'r') as f:
-            s.update(line.strip() for line in f if line.strip())
+            spam_numbers.update(line.strip() for line in f if line.strip())
     except FileNotFoundError:
-        pass
-    s.update(st.session_state.spam_numbers)
-    return s
+        pass  # File might not exist initially
+    spam_numbers.update(st.session_state.spam_numbers)
+    return spam_numbers
 
-# Load ML model
+# Custom CSS for dark theme and styling
+st.markdown("""
+    <style>
+        /* Import modern font */
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+
+        /* Global styles for dark theme */
+        .stApp {
+            background: linear-gradient(135deg, #2b1055, #7597de);
+            font-family: 'Montserrat', sans-serif;
+            color: #ffffff;
+        }
+        /* Navigation bar styling */
+        .nav-bar {
+            background-color: #1a0d3d;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .nav-link {
+            color: #ffffff !important;
+            font-size: 18px;
+            font-weight: bold;
+            text-decoration: none !important;
+            padding: 10px 15px;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+        .nav-link:hover {
+            color: #FFDAB9 !important; /* Peach color on hover */
+            font-size: 20px; /* Slightly larger size on hover */
+            background-color: #3b1a7a;
+        }
+        .nav-link.active {
+            background-color: #ff4d4d;
+            color: #ffffff !important;
+            font-size: 18px; /* Ensure active link doesn't increase size */
+        }
+        /* Header styling (for Home page) */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            background: transparent;
+        }
+        .header-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .header-link {
+            font-size: 18px;
+            color: #ffffff !important;
+            font-weight: bold;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 1px solid #ffffff;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+        }
+        .header-link:hover {
+            background-color: #ffffff;
+            color: #2b1055 !important;
+        }
+        /* Main content styling for Home page */
+        .hero-section {
+            padding: 50px;
+            text-align: left;
+        }
+        .hero-text {
+            font-size: 48px;
+            font-weight: bold;
+            line-height: 1.2;
+            color: #ffffff;
+        }
+        .hero-text span {
+            color: #ff4d4d;
+        }
+        .sub-hero-text {
+            font-size: 28px;
+            font-weight: normal;
+            color: #ffffff;
+            margin-top: 20px;
+        }
+        /* Subheader styling */
+        .subheader {
+            color: #ff4d4d;
+            font-size: 24px;
+            font-family: 'Montserrat', sans-serif;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        /* Input container styling */
+        .input-container {
+            background-color: #2b1055;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .input-container input, .input-container textarea {
+            background-color: #3b1a7a !important;
+            color: #ffffff !important;
+            border: 1px solid #7597de !important;
+        }
+        /* Translucent side box */
+        .side-box {
+            background-color: rgba(43, 16, 85, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            margin-top: 20px;
+        }
+        /* Button styling with hover effect */
+        .stButton>button {
+            background-color: #ff4d4d;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .stButton>button:hover {
+            background-color: #e63b3b;
+        }
+        /* Download button styling */
+        .stDownloadButton>button {
+            background-color: #f0c14b;
+            color: #2b1055;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .stDownloadButton>button:hover {
+            background-color: #d9a413;
+        }
+        /* Result styling */
+        .result-not-spam {
+            background-color: #1a4d3d;
+            color: #a3e6c9;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .result-spam {
+            background-color: #4d1a1a;
+            color: #e6a3a3;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        /* Note styling */
+        .note {
+            color: #b0b0b0;
+            font-style: italic;
+            margin-top: 5px;
+        }
+        /* Fade-in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .fade-in {
+            animation: fadeIn 1s ease-in;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# Handle navigation using query parameters
+query_params = st.query_params
+page = query_params.get("page", "Home")  # Default to "Home" if no page parameter
+
+# Horizontal Navigation Bar
+nav_html = f"""
+    <div class="nav-bar fade-in">
+        <a href="?page=Home" class="nav-link {'active' if page == 'Home' else ''}">Home</a>
+        <a href="?page=Services" class="nav-link {'active' if page == 'Services' else ''}">Services</a>
+        <a href="?page=Feedback" class="nav-link {'active' if page == 'Feedback' else ''}">Feedback</a>
+    </div>
+"""
+st.markdown(nav_html, unsafe_allow_html=True)
+
+# Function to parse phone number
+def parse_phone_number(phone_number):
+    try:
+        parsed_number = phonenumbers.parse(phone_number)
+        if not phonenumbers.is_valid_number(parsed_number):
+            return None, "Unknown", "Unknown", "Unknown", False
+        formatted_number = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+        local_provider = carrier.name_for_number(parsed_number, "en")
+        region = geocoder.description_for_number(parsed_number, "en")
+        time_zone = timezone.time_zones_for_number(parsed_number)[0] if timezone.time_zones_for_number(parsed_number) else "Unknown"
+        return formatted_number, local_provider, region, time_zone, True
+    except phonenumbers.NumberParseException:
+        return None, "Unknown", "Unknown", "Unknown", False
+
+# Function to get info from Numlookup API
+def get_numlookup_info(phone_number):
+    api_key = st.secrets.get("NUMLOOKUP_API_KEY", "your_api_key_here")
+    url = f"https://www.numlookupapi.com/api/v1/validate/{phone_number}?apikey={api_key}"
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return (
+                data.get("carrier", "Unknown"),
+                data.get("location", "Unknown"),
+                data.get("line_type", "Unknown"),
+                data.get("country_name", "Unknown")
+            )
+        return "Unknown", "Unknown", "Unknown", "Unknown"
+    except requests.RequestException:
+        return "Unknown", "Unknown", "Unknown", "Unknown"
+
+# Load ML model and vectorizer
 @st.cache_resource
 def load_model_and_vectorizer():
     model = joblib.load('spam_classifier.pkl')
@@ -62,33 +286,9 @@ def load_model_and_vectorizer():
 
 model, vectorizer = load_model_and_vectorizer()
 
-# Phone parsing
-def parse_phone_number(number):
-    try:
-        parsed = phonenumbers.parse(number)
-        if not phonenumbers.is_valid_number(parsed):
-            return None, "Unknown", "Unknown", "Unknown", False
-        formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
-        provider = carrier.name_for_number(parsed, "en")
-        region = geocoder.description_for_number(parsed, "en")
-        tz = timezone.time_zones_for_number(parsed)
-        time_zone = tz[0] if tz else "Unknown"
-        return formatted, provider, region, time_zone, True
-    except:
-        return None, "Unknown", "Unknown", "Unknown", False
-
-# Numlookup API (optional)
-def get_numlookup_info(phone_number):
-    api_key = st.secrets.get("NUMLOOKUP_API_KEY", "your_api_key_here")
-    url = f"https://www.numlookupapi.com/api/v1/validate/{phone_number}?apikey={api_key}"
-    try:
-        r = requests.get(url, timeout=5)
-        if r.status_code == 200:
-            d = r.json()
-            return d.get("carrier", "Unknown"), d.get("location", "Unknown"), d.get("line_type", "Unknown"), d.get("country_name", "Unknown")
-    except:
-        pass
-    return "Unknown", "Unknown", "Unknown", "Unknown"
+# Define spam keywords and trusted sources
+SPAM_KEYWORDS = ["won", "click", "link", "prize", "free", "claim", "urgent", "offer", "win", "congratulations", "money", "rupee", "reward", "lottery"]
+TRUSTED_SOURCES = ["-SBI", "-HDFC", "-ICICI"]
 
 # Load data at startup
 userdata = load_userdata()
@@ -98,120 +298,186 @@ st.session_state.feedback = feedback
 spam_numbers = load_spam_numbers()
 st.session_state.spam_numbers = spam_numbers
 
-# Navigation
-query_params = st.query_params
-page = query_params.get("page", "Home")
-
-# Header Navigation
-st.markdown("""
-<style>
-.nav-bar {
-    background: #1a0d3d;
-    padding: 10px;
-    display: flex;
-    justify-content: center;
-    gap: 30px;
-}
-.nav-link {
-    color: white !important;
-    font-weight: bold;
-    font-size: 18px;
-    text-decoration: none;
-}
-.nav-link:hover {
-    color: #FFDAB9 !important;
-}
-.nav-link.active {
-    color: #ff4d4d !important;
-}
-</style>
-<div class="nav-bar">
-    <a href="?page=Home" class="nav-link {home}">Home</a>
-    <a href="?page=Services" class="nav-link {services}">Services</a>
-    <a href="?page=Feedback" class="nav-link {feedback}">Feedback</a>
-</div>
-""".format(
-    home="active" if page == "Home" else "",
-    services="active" if page == "Services" else "",
-    feedback="active" if page == "Feedback" else ""
-), unsafe_allow_html=True)
-
-# HOME PAGE
+# Home Page
 if page == "Home":
-    st.title("📞 Spam Shield")
-    st.subheader("Stop wasting time on spam calls & messages!")
+    # Header with title and Contact link
+    st.markdown("""
+        <div class="header fade-in">
+            <div class="header-title">Spam Shield</div>
+            <a href="mailto:support@spamshield.com" class="header-link">Contact</a>
+        </div>
+    """, unsafe_allow_html=True)
 
-    name = st.text_input("Your Name")
-    phone = st.text_input("Your Phone Number (e.g., +919876543210)")
+    # Hero section with stylized text
+    st.markdown("""
+        <div class="hero-section fade-in">
+            <div class="hero-text">
+                Hi,<br>
+                SPAM SHIELD IS HERE TO SAVE YOUR TIME RESPONDING TO THE<br>
+                <span>SPAM CALLS AND MESSAGES</span>
+            </div>
+            <div class="sub-hero-text">
+                A SINGLE PLATFORM WITH MULTIPLE USE
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Translucent side box for user verification
+    st.markdown('<div class="side-box fade-in">', unsafe_allow_html=True)
+    st.subheader("Verify Your Number")
+    st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
+    name = st.text_input("Your Name", key="name_input")
+    phone = st.text_input("Your Phone Number (e.g., +919876543210)", key="phone_input_home")
     if st.button("Submit Verification"):
         if name and phone:
-            formatted_phone, _, _, _, valid = parse_phone_number(phone)
-            if valid:
+            formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
+            if is_valid:
                 st.session_state.userdata[formatted_phone] = name
-                st.success(f"Thanks {name}, your number {formatted_phone} is verified.")
+                st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+                st.info("Note: To persist this data, download the updated userdata from the Feedback page and update your GitHub repository.")
             else:
-                st.error("Invalid number.")
+                st.error("Invalid phone number. Please enter a valid number.")
         else:
-            st.warning("Fill both fields.")
+            st.warning("Please enter both name and phone number.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# SERVICES PAGE
+# Services Page
 elif page == "Services":
-    st.header("📲 Phone Number & SMS Checker")
-
-    phone_number = st.text_input("Enter Phone Number:")
-    sms_text = st.text_area("Paste SMS Message (Optional)")
-
-    if st.button("Check"):
-        if phone_number:
-            formatted, local_provider, region, tz, is_valid = parse_phone_number(phone_number)
+    st.markdown('<div class="subheader fade-in">📲 Check Phone Number & SMS</div>', unsafe_allow_html=True)
+    with st.container():
+        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
+        phone_number = st.text_input("Enter Phone Number (e.g., +919876543210):", key="phone_input_services")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("Check Number"):
+        if not phone_number.strip():
+            st.warning("Please enter a phone number.")
+        else:
+            formatted_number, local_provider, region, time_zone, is_valid = parse_phone_number(phone_number)
             if not is_valid:
-                st.error("Invalid number")
+                st.error("Invalid phone number. Please enter a valid number.")
             else:
-                api_provider, location, line_type, country = get_numlookup_info(formatted)
-                name = st.session_state.userdata.get(formatted, "Unknown")
-
+                api_provider, location, line_type, country = get_numlookup_info(formatted_number)
+                name = st.session_state.userdata.get(formatted_number, "Unknown")
                 classification = "✅ Not Spam"
-                if any(formatted.startswith(p) for p in ["+140", "+91140", "140"]):
+                special_classification = None
+                number_without_country = formatted_number[3:] if formatted_number.startswith("+91") else formatted_number
+                if number_without_country.startswith("14") or number_without_country.startswith("88265") or number_without_country.startswith("796512"):
                     classification = "🚨 Spam"
-                if formatted in st.session_state.spam_numbers:
+                elif number_without_country.startswith("16"):
+                    special_classification = "Government or Regulators"
+                    classification = "ℹ️ Not Spam"
+                if formatted_number in st.session_state.spam_numbers:
+                    classification = "🚨 Spam"
+                if formatted_number.startswith("+140") or formatted_number.startswith("140"):
                     classification = "🚨 Spam"
                 if local_provider == "Unknown" and api_provider == "Unknown":
                     classification = "🚨 Spam"
+                if special_classification:
+                    classification = f"{classification} ({special_classification})"
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">**Phone Number:** {formatted_number}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">**Associated Name:** {name}</div>', unsafe_allow_html=True)
+                displayed_provider = api_provider if api_provider != "Unknown" else local_provider
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">📶 **Service Provider:** {displayed_provider}</div>', unsafe_allow_html=True)
+                if displayed_provider != "Unknown":
+                    st.markdown('<div class="note fade-in">*Note:* The provider may have changed due to Mobile Number Portability (MNP). Verify with the number’s owner if needed.</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">🌍 **Region/City:** {location if location != "Unknown" else region}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">⏰ **Time Zone:** {time_zone}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">📞 **Line Type:** {line_type}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">🌎 **Country:** {country}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">🔍 **Classification:** {classification}</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="subheader fade-in">📩 SMS Spam Detector</div>', unsafe_allow_html=True)
+    with st.container():
+        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
+        user_message = st.text_area("Enter SMS text:", key="sms_input")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("Check SMS"):
+        if not user_message.strip():
+            st.warning("Please enter a message.")
+        else:
+            message_lower = user_message.lower()
+            is_trusted = any(source in user_message for source in TRUSTED_SOURCES)
+            spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
+            user_message_vectorized = vectorizer.transform([user_message])
+            prediction = model.predict(user_message_vectorized)[0]
+            if is_trusted and spam_keyword_count <= 1:
+                result = "✅ Not Spam"
+            elif spam_keyword_count >= 2 or prediction == 1:
+                result = "🚨 Spam"
+            else:
+                result = "✅ Not Spam"
+            st.markdown(f'<div class="result-{"spam" if "Spam" in result else "not-spam"} fade-in">🔍 **Classification:** {result}</div>', unsafe_allow_html=True)
+            if spam_keyword_count > 0 and result == "🚨 Spam":
+                st.markdown(f'<div class="note fade-in">⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.</div>', unsafe_allow_html=True)
+    
+    st.markdown('<div class="subheader fade-in">📝 Report a Spam Number</div>', unsafe_allow_html=True)
+    with st.container():
+        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
+        feedback_phone = st.text_input("Enter a Spam Number to Report:", key="report_input")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("Submit Report"):
+        if not feedback_phone.strip():
+            st.warning("Please enter a valid phone number to report.")
+        else:
+            formatted_feedback, _, _, _, is_valid = parse_phone_number(feedback_phone)
+            if is_valid:
+                st.session_state.spam_numbers.add(formatted_feedback)
+                st.success(f"Phone number {formatted_feedback} has been reported as spam.")
+                st.info("Note: To persist this data, download the updated spam numbers from the Feedback page and update your GitHub repository.")
+            else:
+                st.error("Invalid phone number. Please enter a valid number.")
 
-                st.write("**Name:**", name)
-                st.write("**Formatted Number:**", formatted)
-                st.write("**Provider:**", api_provider or local_provider)
-                st.write("**Location:**", location or region)
-                st.write("**Line Type:**", line_type)
-                st.write("**Time Zone:**", tz)
-                st.write("**Country:**", country)
-                st.info(f"Classification: {classification}")
-
-        if sms_text:
-            text = sms_text.lower()
-            X = vectorizer.transform([text])
-            pred = model.predict(X)[0]
-            st.success("✅ Not Spam" if pred == "ham" else "🚨 Spam")
-
-# FEEDBACK PAGE
+# Feedback Page
 elif page == "Feedback":
-    st.header("🗣️ Share Feedback or Report Spam")
-
-    feedback_text = st.text_area("Your Feedback")
+    st.markdown('<div class="subheader fade-in">📝 Submit Feedback</div>', unsafe_allow_html=True)
+    feedback_text = st.text_area("Please provide your feedback:", key="feedback_input")
     if st.button("Submit Feedback"):
         if feedback_text.strip():
-            st.session_state.feedback.append(feedback_text.strip())
-            st.success("Thanks for your feedback!")
-
-    spam_num = st.text_input("Report Spam Number (e.g., +919999999999)")
-    if st.button("Report Spam"):
-        formatted, *_ = parse_phone_number(spam_num)
-        if formatted:
-            st.session_state.spam_numbers.add(formatted)
-            st.success(f"Reported {formatted} as spam.")
+            st.session_state.feedback.append(feedback_text)
+            st.success("Thank you for your feedback!")
+            st.info("Note: To persist this data, download the updated feedback from below and update your GitHub repository.")
         else:
-            st.error("Invalid number.")
-
-    st.download_button("⬇️ Download Verified Users", data="\n".join(f"{v},{k}" for k, v in st.session_state.userdata.items()), file_name="userdata.txt")
-    st.download_button("⬇️ Download Feedback", data="\n".join(st.session_state.feedback), file_name="feedback.txt")
-    st.download_button("⬇️ Download Spam Numbers", data="\n".join(st.session_state.spam_numbers), file_name="spam_numbers.txt")
+            st.warning("Please enter some feedback.")
+    
+    # Section to download collected data
+    st.markdown('<div class="subheader fade-in">📥 Download Collected Data</div>', unsafe_allow_html=True)
+    st.write("Download the data below to manually update your GitHub repository and persist it across app restarts.")
+    
+    # Download userdata
+    userdata_content = "\n".join([f"{name},{phone}" for phone, name in st.session_state.userdata.items()])
+    if userdata_content:
+        st.download_button(
+            label="Download Updated Userdata",
+            data=userdata_content,
+            file_name="updated_userdata.txt",
+            mime="text/plain"
+        )
+    else:
+        st.write("No user data collected yet.")
+    
+    # Download feedback
+    feedback_content = "\n".join(st.session_state.feedback)
+    if feedback_content:
+        st.download_button(
+            label="Download Updated Feedback",
+            data=feedback_content,
+            file_name="updated_feedback.txt",
+            mime="text/plain"
+        )
+    else:
+        st.write("No feedback collected yet.")
+    
+    # Download spam numbers
+    spam_numbers_content = "\n".join(st.session_state.spam_numbers)
+    if spam_numbers_content:
+        st.download_button(
+            label="Download Updated Spam Numbers",
+            data=spam_numbers_content,
+            file_name="updated_spam_numbers.txt",
+            mime="text/plain"
+        )
+    else:
+        st.write("No spam numbers collected yet.")
