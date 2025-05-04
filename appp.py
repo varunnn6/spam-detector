@@ -69,9 +69,11 @@ st.session_state.spam_numbers.update(initial_spam_numbers)
 # Reference to spam_numbers for easier use
 spam_numbers = st.session_state.spam_numbers
 
-# Initialize session state for user data
+# Initialize session state for user data and feedback
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
+if 'feedback' not in st.session_state:
+    st.session_state.feedback = []
 
 # Numlookup API Key
 API_KEY = "num_live_gAgRGbG0st9WUyf8sR98KqlcKb5qB0SkrZFEpIm6"
@@ -116,13 +118,17 @@ def parse_phone_number(phone_number):
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-col1, col2 = st.columns(2)
+# Use columns with equal ratios to place buttons close together
+col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
-    if st.button("Home"):
+    if st.button("Home", key="nav_home"):
         st.session_state.current_page = "Home"
 with col2:
-    if st.button("Services"):
+    if st.button("Services", key="nav_services"):
         st.session_state.current_page = "Services"
+with col3:
+    if st.button("Feedback", key="nav_feedback"):
+        st.session_state.current_page = "Feedback"
 
 # Page Content
 page = st.session_state.current_page
@@ -283,3 +289,15 @@ elif page == "Services":
                 st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
+
+# Feedback Page
+elif page == "Feedback":
+    st.subheader("📝 Submit Feedback")
+    feedback_text = st.text_area("Please provide your feedback:", key="feedback_input")
+    if st.button("Submit Feedback"):
+        if feedback_text.strip():
+            st.session_state.feedback.append(feedback_text)
+            st.success("Thank you for your feedback!")
+            st.info("Note: Data will reset on app restart.")
+        else:
+            st.warning("Please enter some feedback.")
