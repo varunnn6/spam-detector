@@ -11,13 +11,15 @@ USERDATA_FILE = "userdata.txt"
 FEEDBACK_FILE = "feedback.txt"
 SPAM_FILE = "spam_numbers.txt"
 
-# Initialize session state for data persistence during runtime
+# Initialize session state for data persistence and navigation
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
 if 'feedback' not in st.session_state:
     st.session_state.feedback = []
 if 'spam_numbers' not in st.session_state:
     st.session_state.spam_numbers = set()
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Home"  # Default page
 
 # Load data from files at startup
 def load_userdata():
@@ -74,24 +76,27 @@ st.markdown("""
             gap: 30px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
-        .nav-link {
+        /* Custom styling for navigation buttons */
+        div.stButton > button {
             color: #ffffff !important;
             font-size: 18px;
             font-weight: bold;
             text-decoration: none !important;
             padding: 10px 15px;
             border-radius: 5px;
+            border: none;
+            background-color: transparent;
             transition: all 0.3s ease;
         }
-        .nav-link:hover {
+        div.stButton > button:hover {
             color: #FFDAB9 !important; /* Peach color on hover */
             font-size: 20px; /* Slightly larger size on hover */
             background-color: #3b1a7a;
         }
-        .nav-link.active {
+        div.stButton > button.active {
             background-color: #ff4d4d;
             color: #ffffff !important;
-            font-size: 18px; /* Ensure active link doesn't increase size */
+            font-size: 18px; /* Ensure active button doesn't increase size */
         }
         /* Header styling (for Home page) */
         .header {
@@ -169,8 +174,8 @@ st.markdown("""
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
             margin-top: 20px;
         }
-        /* Button styling with hover effect */
-        .stButton>button {
+        /* Button styling for other buttons */
+        .stButton:not(.nav-bar .stButton) > button {
             background-color: #ff4d4d;
             color: #ffffff;
             border: none;
@@ -180,7 +185,7 @@ st.markdown("""
             cursor: pointer;
             transition: background-color 0.3s ease;
         }
-        .stButton>button:hover {
+        .stButton:not(.nav-bar .stButton) > button:hover {
             background-color: #e63b3b;
         }
         /* Download button styling */
@@ -231,19 +236,39 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Handle navigation using query parameters
-query_params = st.query_params
-page = query_params.get("page", "Home")  # Default to "Home" if no page parameter
+# Horizontal Navigation Bar with Buttons
+st.markdown('<div class="nav-bar fade-in">', unsafe_allow_html=True)
+col1, col2, col3 = st.columns([1, 1, 1])
 
-# Horizontal Navigation Bar
-nav_html = f"""
-    <div class="nav-bar fade-in">
-        <a href="?page=Home" class="nav-link {'active' if page == 'Home' else ''}">Home</a>
-        <a href="?page=Services" class="nav-link {'active' if page == 'Services' else ''}">Services</a>
-        <a href="?page=Feedback" class="nav-link {'active' if page == 'Feedback' else ''}">Feedback</a>
-    </div>
-"""
-st.markdown(nav_html, unsafe_allow_html=True)
+with col1:
+    if st.button("Home", key="nav_home"):
+        st.session_state.current_page = "Home"
+    # Add 'active' class to the button if it's the current page
+    if st.session_state.current_page == "Home":
+        st.markdown(
+            '<style>div[data-testid="stButton"][id*="nav_home"] > button { background-color: #ff4d4d; }</style>',
+            unsafe_allow_html=True
+        )
+
+with col2:
+    if st.button("Services", key="nav_services"):
+        st.session_state.current_page = "Services"
+    if st.session_state.current_page == "Services":
+        st.markdown(
+            '<style>div[data-testid="stButton"][id*="nav_services"] > button { background-color: #ff4d4d; }</style>',
+            unsafe_allow_html=True
+        )
+
+with col3:
+    if st.button("Feedback", key="nav_feedback"):
+        st.session_state.current_page = "Feedback"
+    if st.session_state.current_page == "Feedback":
+        st.markdown(
+            '<style>div[data-testid="stButton"][id*="nav_feedback"] > button { background-color: #ff4d4d; }</style>',
+            unsafe_allow_html=True
+        )
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Function to parse phone number
 def parse_phone_number(phone_number):
@@ -297,6 +322,9 @@ feedback = load_feedback()
 st.session_state.feedback = feedback
 spam_numbers = load_spam_numbers()
 st.session_state.spam_numbers = spam_numbers
+
+# Render content based on the current page
+page = st.session_state.current_page
 
 # Home Page
 if page == "Home":
