@@ -70,15 +70,15 @@ st.markdown("""
         /* Navigation bar styling */
         .nav-bar {
             background-color: #1a0d3d;
-            padding: 10px 0; /* Remove side padding to extend full width */
-            width: 100%; /* Ensure full width */
+            padding: 10px 0;
+            width: 100%;
             display: flex;
             justify-content: center;
             gap: 30px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
         /* Custom styling for navigation buttons */
-        div.stButton > button {
+        .nav-bar div.stButton > button {
             color: #ffffff !important;
             font-size: 18px;
             font-weight: bold;
@@ -89,12 +89,12 @@ st.markdown("""
             background-color: transparent;
             transition: all 0.3s ease;
         }
-        div.stButton > button:hover {
+        .nav-bar div.stButton > button:hover {
             color: #FFDAB9 !important; /* Peach color on hover */
             font-size: 20px; /* Slightly larger size on hover */
             background-color: #3b1a7a;
         }
-        div.stButton > button.active {
+        .nav-bar div.stButton > button.active {
             background-color: #ff4d4d;
             color: #ffffff !important;
             font-size: 18px; /* Ensure active button doesn't increase size */
@@ -154,7 +154,7 @@ st.markdown("""
             margin-top: 20px;
             margin-bottom: 10px;
         }
-        /* Input fields styling (remove purple-blue bars) */
+        /* Input fields styling */
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea {
             background-color: #3b1a7a !important;
@@ -162,12 +162,11 @@ st.markdown("""
             border: 1px solid #7597de !important;
             border-radius: 5px;
         }
-        /* Translucent side box */
-        .side-box {
-            background-color: rgba(43, 16, 85, 0.8);
+        /* Box styling for sections (like Contact button) */
+        .content-box {
+            border: 1px solid #ffffff;
+            border-radius: 25px;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
             margin-top: 20px;
         }
         /* Button styling for other buttons */
@@ -228,7 +227,7 @@ with col1:
     # Add 'active' class to the button if it's the current page
     if st.session_state.current_page == "Home":
         st.markdown(
-            '<style>div[data-testid="stButton"][id*="nav_home"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_home"] > button { background-color: #ff4d4d; }</style>',
             unsafe_allow_html=True
         )
 
@@ -237,7 +236,7 @@ with col2:
         st.session_state.current_page = "Services"
     if st.session_state.current_page == "Services":
         st.markdown(
-            '<style>div[data-testid="stButton"][id*="nav_services"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_services"] > button { background-color: #ff4d4d; }</style>',
             unsafe_allow_html=True
         )
 
@@ -246,7 +245,7 @@ with col3:
         st.session_state.current_page = "Feedback"
     if st.session_state.current_page == "Feedback":
         st.markdown(
-            '<style>div[data-testid="stButton"][id*="nav_feedback"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_feedback"] > button { background-color: #ff4d4d; }</style>',
             unsafe_allow_html=True
         )
 
@@ -332,8 +331,8 @@ if page == "Home":
         </div>
     """, unsafe_allow_html=True)
     
-    # Translucent side box for user verification
-    st.markdown('<div class="side-box fade-in">', unsafe_allow_html=True)
+    # Verify Your Number section in a box
+    st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
     st.subheader("Verify Your Number")
     st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
     name = st.text_input("Your Name", key="name_input")
@@ -353,7 +352,9 @@ if page == "Home":
 
 # Services Page
 elif page == "Services":
-    st.markdown('<div class="subheader fade-in">📲 Check Phone Number & SMS</div>', unsafe_allow_html=True)
+    # Check Phone Number & SMS section in a box
+    st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">📲 Check Phone Number & SMS</div>', unsafe_allow_html=True)
     with st.container():
         phone_number = st.text_input("Enter Phone Number (e.g., +919876543210):", key="phone_input_services")
     
@@ -394,8 +395,11 @@ elif page == "Services":
                 st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">📞 **Line Type:** {line_type}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">🌎 **Country:** {country}</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="result-{"spam" if "Spam" in classification else "not-spam"} fade-in">🔍 **Classification:** {classification}</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="subheader fade-in">📩 SMS Spam Detector</div>', unsafe_allow_html=True)
+    # SMS Spam Detector section in a box
+    st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">📩 SMS Spam Detector</div>', unsafe_allow_html=True)
     with st.container():
         user_message = st.text_area("Enter SMS text:", key="sms_input")
     
@@ -417,8 +421,11 @@ elif page == "Services":
             st.markdown(f'<div class="result-{"spam" if "Spam" in result else "not-spam"} fade-in">🔍 **Classification:** {result}</div>', unsafe_allow_html=True)
             if spam_keyword_count > 0 and result == "🚨 Spam":
                 st.markdown(f'<div class="note fade-in">⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="subheader fade-in">📝 Report a Spam Number</div>', unsafe_allow_html=True)
+    # Report a Spam Number section in a box
+    st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">📝 Report a Spam Number</div>', unsafe_allow_html=True)
     with st.container():
         feedback_phone = st.text_input("Enter a Spam Number to Report:", key="report_input")
     
@@ -433,10 +440,13 @@ elif page == "Services":
                 st.info("Note: Data will reset on app restart since the download section has been removed.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Feedback Page
 elif page == "Feedback":
-    st.markdown('<div class="subheader fade-in">📝 Submit Feedback</div>', unsafe_allow_html=True)
+    # Submit Feedback section in a box
+    st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
+    st.markdown('<div class="subheader">📝 Submit Feedback</div>', unsafe_allow_html=True)
     feedback_text = st.text_area("Please provide your feedback:", key="feedback_input")
     if st.button("Submit Feedback"):
         if feedback_text.strip():
@@ -445,3 +455,4 @@ elif page == "Feedback":
             st.info("Note: Data will reset on app restart since the download section has been removed.")
         else:
             st.warning("Please enter some feedback.")
+    st.markdown('</div>', unsafe_allow_html=True)
