@@ -11,6 +11,61 @@ from phonenumbers import carrier, geocoder, timezone
 # Streamlit App Title
 st.title("Spam Shield 📩")
 
+# Files for persistence
+USERDATA_FILE = "userdata.txt"
+FEEDBACK_FILE = "feedback.txt"
+
+# Initialize session state for user data and feedback
+if 'userdata' not in st.session_state:
+    st.session_state.userdata = {}
+if 'feedback' not in st.session_state:
+    st.session_state.feedback = []
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "Home"
+
+# Load user data from file at startup
+def load_userdata():
+    userdata = {}
+    try:
+        with open(USERDATA_FILE, 'r') as f:
+            for line in f:
+                if line.strip():
+                    name, phone = line.strip().split(',')
+                    userdata[phone] = name
+    except FileNotFoundError:
+        # Create the file if it doesn't exist
+        with open(USERDATA_FILE, 'w') as f:
+            pass
+    return userdata
+
+# Save user data to file
+def save_userdata(userdata):
+    with open(USERDATA_FILE, 'w') as f:
+        for phone, name in userdata.items():
+            f.write(f"{name},{phone}\n")
+
+# Load feedback from file at startup
+def load_feedback():
+    feedback = []
+    try:
+        with open(FEEDBACK_FILE, 'r') as f:
+            feedback = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        # Create the file if it doesn't exist
+        with open(FEEDBACK_FILE, 'w') as f:
+            pass
+    return feedback
+
+# Save feedback to file
+def save_feedback(feedback):
+    with open(FEEDBACK_FILE, 'w') as f:
+        for entry in feedback:
+            f.write(f"{entry}\n")
+
+# Load data into session state at startup
+st.session_state.userdata = load_userdata()
+st.session_state.feedback = load_feedback()
+
 # Load Trained Machine Learning Model and Vectorizer
 @st.cache_resource
 def load_model_and_vectorizer():
@@ -69,59 +124,6 @@ st.session_state.spam_numbers.update(initial_spam_numbers)
 # Reference to spam_numbers for easier use
 spam_numbers = st.session_state.spam_numbers
 
-# Files for persistence
-USERDATA_FILE = "userdata.txt"
-FEEDBACK_FILE = "feedback.txt"
-
-# Initialize session state for user data and feedback
-if 'userdata' not in st.session_state:
-    st.session_state.userdata = {}
-if 'feedback' not in st.session_state:
-    st.session_state.feedback = []
-
-# Load user data from file at startup
-def load_userdata():
-    userdata = {}
-    try:
-        with open(USERDATA_FILE, 'r') as f:
-            for line in f:
-                if line.strip():
-                    name, phone = line.strip().split(',')
-                    userdata[phone] = name
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(USERDATA_FILE, 'w') as f:
-            pass
-    return userdata
-
-# Save user data to file
-def save_userdata(userdata):
-    with open(USERDATA_FILE, 'w') as f:
-        for phone, name in userdata.items():
-            f.write(f"{name},{phone}\n")
-
-# Load feedback from file at startup
-def load_feedback():
-    feedback = []
-    try:
-        with open(FEEDBACK_FILE, 'r') as f:
-            feedback = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(FEEDBACK_FILE, 'w') as f:
-            pass
-    return feedback
-
-# Save feedback to file
-def save_feedback(feedback):
-    with open(FEEDBACK_FILE, 'w') as f:
-        for each in feedback:
-            f.write(f"{each}\n")
-
-# Load data into session state at startup
-st.session_state.userdata = load_userdata()
-st.session_state.feedback = load_feedback()
-
 # Numlookup API Key
 API_KEY = "num_live_gAgRGbG0st9WUyf8sR98KqlcKb5qB0SkrZFEpIm6"
 
@@ -161,36 +163,35 @@ def parse_phone_number(phone_number):
     except phonenumbers.NumberParseException:
         return None, None, None, None, False
 
-# Custom CSS to force horizontal navigation bar on all screen sizes
+# Custom CSS to force horizontal buttons inside the expander
 st.markdown("""
     <style>
-        .nav-container {
+        .nav-buttons-container {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
-            justify-content: space-around !important;
+            justify-content: flex-start !important;
             width: 100% !important;
-            margin-bottom: 20px !important;
         }
-        .nav-container div {
+        .nav-buttons-container div {
             flex: 1 !important;
             min-width: 80px !important;
             max-width: 120px !important;
-            margin: 0 5px !important;
+            margin: 0 2.5px !important;  /* 2.5px left + 2.5px right = 5px gap */
         }
-        .nav-container div.stButton > button {
+        .nav-buttons-container div.stButton > button {
             width: 100% !important;
             padding: 8px !important;
             font-size: 14px !important;
             white-space: nowrap !important;
         }
         @media (max-width: 640px) {
-            .nav-container div {
+            .nav-buttons-container div {
                 min-width: 70px !important;
                 max-width: 100px !important;
-                margin: 0 2px !important;
+                margin: 0 2.5px !important;  /* Maintain 5px gap on mobile */
             }
-            .nav-container div.stButton > button {
+            .nav-buttons-container div.stButton > button {
                 font-size: 12px !important;
                 padding: 6px !important;
             }
@@ -198,23 +199,21 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Navigation Bar
-if 'current_page' not in st.session_state:
-    st.session_state.current_page = "Home"
-
-# Wrap the navigation buttons in a div with the custom class
-st.markdown('<div class="nav-container">', unsafe_allow_html=True)
-col1, col2, col3 = st.columns([1, 1, 1])
-with col1:
-    if st.button("Home", key="nav_home"):
-        st.session_state.current_page = "Home"
-with col2:
-    if st.button("Services", key="nav_services"):
-        st.session_state.current_page = "Services"
-with col3:
-    if st.button("Feedback", key="nav_feedback"):
-        st.session_state.current_page = "Feedback"
-st.markdown('</div>', unsafe_allow_html=True)
+# Navigation Expander
+with st.expander(">"):
+    # Wrap the navigation buttons in a div with the custom class
+    st.markdown('<div class="nav-buttons-container">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("Home", key="nav_home"):
+            st.session_state.current_page = "Home"
+    with col2:
+        if st.button("Services", key="nav_services"):
+            st.session_state.current_page = "Services"
+    with col3:
+        if st.button("Feedback", key="nav_feedback"):
+            st.session_state.current_page = "Feedback"
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Page Content
 page = st.session_state.current_page
