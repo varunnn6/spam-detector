@@ -9,7 +9,7 @@ import re
 from phonenumbers import carrier, geocoder, timezone
 
 # Streamlit App Title
-st.title("Spam Shield 📩")
+st.title("Spam Shield 🛡️")
 
 # Files for persistence
 USERDATA_FILE = "userdata.txt"
@@ -163,57 +163,52 @@ def parse_phone_number(phone_number):
     except phonenumbers.NumberParseException:
         return None, None, None, None, False
 
-# Custom CSS to force horizontal buttons inside the expander
-st.markdown("""
-    <style>
-        .nav-buttons-container {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            justify-content: flex-start !important;
-            width: 100% !important;
-        }
-        .nav-buttons-container div {
-            flex: 1 !important;
-            min-width: 80px !important;
-            max-width: 120px !important;
-            margin: 0 2.5px !important;  /* 2.5px left + 2.5px right = 5px gap */
-        }
-        .nav-buttons-container div.stButton > button {
-            width: 100% !important;
-            padding: 8px !important;
-            font-size: 14px !important;
-            white-space: nowrap !important;
-        }
-        @media (max-width: 640px) {
-            .nav-buttons-container div {
-                min-width: 70px !important;
-                max-width: 100px !important;
-                margin: 0 2.5px !important;  /* Maintain 5px gap on mobile */
-            }
-            .nav-buttons-container div.stButton > button {
-                font-size: 12px !important;
-                padding: 6px !important;
-            }
-        }
-    </style>
-""", unsafe_allow_html=True)
+# Navigation Sidebar
+with st.sidebar:
+    st.header("Navigation")
+    if st.button("Home", key="nav_home"):
+        st.session_state.current_page = "Home"
+    if st.button("Services", key="nav_services"):
+        st.session_state.current_page = "Services"
+    if st.button("Feedback", key="nav_feedback"):
+        st.session_state.current_page = "Feedback"
 
-# Navigation Expander
-with st.expander(">"):
-    # Wrap the navigation buttons in a div with the custom class
-    st.markdown('<div class="nav-buttons-container">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col1:
-        if st.button("Home", key="nav_home"):
-            st.session_state.current_page = "Home"
-    with col2:
-        if st.button("Services", key="nav_services"):
-            st.session_state.current_page = "Services"
-    with col3:
-        if st.button("Feedback", key="nav_feedback"):
-            st.session_state.current_page = "Feedback"
-    st.markdown('</div>', unsafe_allow_html=True)
+# JavaScript to automatically close the sidebar after a button is clicked
+st.markdown("""
+<script>
+    // Function to close the sidebar
+    function closeSidebar() {
+        // Find the sidebar toggle button (Streamlit's hamburger menu)
+        const sidebarToggle = document.querySelector('button[aria-label="Open sidebar"]') ||
+                             document.querySelector('button[aria-label="Close sidebar"]');
+        if (sidebarToggle) {
+            // Check if the sidebar is open
+            const sidebar = document.querySelector('div[data-testid="stSidebar"]');
+            const isSidebarOpen = sidebar && sidebar.style.transform !== 'translateX(-100%)';
+            if (isSidebarOpen) {
+                sidebarToggle.click();
+            }
+        }
+    }
+
+    // Add event listeners to the navigation buttons
+    document.addEventListener('DOMContentLoaded', () => {
+        const buttons = [
+            document.querySelector('button[kind="secondary"][key="nav_home"]'),
+            document.querySelector('button[kind="secondary"][key="nav_services"]'),
+            document.querySelector('button[kind="secondary"][key="nav_feedback"]')
+        ];
+
+        buttons.forEach(button => {
+            if (button) {
+                button.addEventListener('click', () => {
+                    setTimeout(closeSidebar, 100); // Small delay to ensure the button action completes
+                });
+            }
+        });
+    });
+</script>
+""", unsafe_allow_html=True)
 
 # Page Content
 page = st.session_state.current_page
