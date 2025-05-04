@@ -69,11 +69,58 @@ st.session_state.spam_numbers.update(initial_spam_numbers)
 # Reference to spam_numbers for easier use
 spam_numbers = st.session_state.spam_numbers
 
+# Files for persistence
+USERDATA_FILE = "userdata.txt"
+FEEDBACK_FILE = "feedback.txt"
+
 # Initialize session state for user data and feedback
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
 if 'feedback' not in st.session_state:
     st.session_state.feedback = []
+
+# Load user data from file at startup
+def load_userdata():
+    userdata = {}
+    try:
+        with open(USERDATA_FILE, 'r') as f:
+            for line in f:
+                if line.strip():
+                    name, phone = line.strip().split(',')
+                    userdata[phone] = name
+    except FileNotFoundError:
+        # Create the file if it doesn't exist
+        with open(USERDATA_FILE, 'w') as f:
+            pass
+    return userdata
+
+# Save user data to file
+def save_userdata(userdata):
+    with open(USERDATA_FILE, 'w') as f:
+        for phone, name in userdata.items():
+            f.write(f"{name},{phone}\n")
+
+# Load feedback from file at startup
+def load_feedback():
+    feedback = []
+    try:
+        with open(FEEDBACK_FILE, 'r') as f:
+            feedback = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        # Create the file if it doesn't exist
+        with open(FEEDBACK_FILE, 'w') as f:
+            pass
+    return feedback
+
+# Save feedback to file
+def save_feedback(feedback):
+    with open(FEEDBACK_FILE, 'w') as f:
+        for each in feedback:
+            f.write(f"{each}\n")
+
+# Load data into session state at startup
+st.session_state.userdata = load_userdata()
+st.session_state.feedback = load_feedback()
 
 # Numlookup API Key
 API_KEY = "num_live_gAgRGbG0st9WUyf8sR98KqlcKb5qB0SkrZFEpIm6"
@@ -114,11 +161,49 @@ def parse_phone_number(phone_number):
     except phonenumbers.NumberParseException:
         return None, None, None, None, False
 
+# Custom CSS to force horizontal navigation bar on all screen sizes
+st.markdown("""
+    <style>
+        .nav-container {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            justify-content: space-around !important;
+            width: 100% !important;
+            margin-bottom: 20px !important;
+        }
+        .nav-container div {
+            flex: 1 !important;
+            min-width: 80px !important;
+            max-width: 120px !important;
+            margin: 0 5px !important;
+        }
+        .nav-container div.stButton > button {
+            width: 100% !important;
+            padding: 8px !important;
+            font-size: 14px !important;
+            white-space: nowrap !important;
+        }
+        @media (max-width: 640px) {
+            .nav-container div {
+                min-width: 70px !important;
+                max-width: 100px !important;
+                margin: 0 2px !important;
+            }
+            .nav-container div.stButton > button {
+                font-size: 12px !important;
+                padding: 6px !important;
+            }
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # Navigation Bar
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Use columns with equal ratios to place buttons close together
+# Wrap the navigation buttons in a div with the custom class
+st.markdown('<div class="nav-container">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     if st.button("Home", key="nav_home"):
@@ -129,6 +214,7 @@ with col2:
 with col3:
     if st.button("Feedback", key="nav_feedback"):
         st.session_state.current_page = "Feedback"
+st.markdown('</div>', unsafe_allow_html=True)
 
 # Page Content
 page = st.session_state.current_page
@@ -155,8 +241,9 @@ if page == "Home":
             formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
             if is_valid:
                 st.session_state.userdata[formatted_phone] = name
+                # Immediately save to file
+                save_userdata(st.session_state.userdata)
                 st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
-                st.info("Note: Data will reset on app restart.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
         else:
@@ -297,7 +384,8 @@ elif page == "Feedback":
     if st.button("Submit Feedback"):
         if feedback_text.strip():
             st.session_state.feedback.append(feedback_text)
+            # Immediately save to file
+            save_feedback(st.session_state.feedback)
             st.success("Thank you for your feedback!")
-            st.info("Note: Data will reset on app restart.")
         else:
             st.warning("Please enter some feedback.")
