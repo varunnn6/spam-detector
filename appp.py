@@ -55,7 +55,7 @@ def load_spam_numbers():
     spam_numbers.update(st.session_state.spam_numbers)
     return spam_numbers
 
-# Custom CSS for dark theme and styling
+# Custom CSS for dark theme, fixed horizontal navigation bar, and styling
 st.markdown("""
     <style>
         /* Import modern font */
@@ -67,8 +67,12 @@ st.markdown("""
             font-family: 'Montserrat', sans-serif;
             color: #ffffff;
         }
-        /* Navigation bar styling */
+
+        /* Fixed Navigation Bar */
         .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
             background-color: #1a0d3d;
             padding: 10px 0;
             width: 100%;
@@ -76,7 +80,14 @@ st.markdown("""
             justify-content: center;
             gap: 30px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 1000;
         }
+
+        /* Padding to prevent content from being hidden under the fixed nav bar */
+        .stApp > div:first-child {
+            padding-top: 80px; /* Adjust based on nav-bar height */
+        }
+
         /* Custom styling for navigation buttons */
         .nav-bar div.stButton > button {
             color: #ffffff !important;
@@ -95,10 +106,11 @@ st.markdown("""
             background-color: #3b1a7a;
         }
         .nav-bar div.stButton > button.active {
-            background-color: #ff4d4d;
+            background-color: #ff4d4d !important;
             color: #ffffff !important;
             font-size: 18px; /* Ensure active button doesn't increase size */
         }
+
         /* Header styling (for Home page) */
         .header {
             display: flex;
@@ -126,6 +138,7 @@ st.markdown("""
             background-color: #ffffff;
             color: #2b1055 !important;
         }
+
         /* Main content styling for Home page */
         .hero-section {
             padding: 50px;
@@ -146,6 +159,7 @@ st.markdown("""
             color: #ffffff;
             margin-top: 20px;
         }
+
         /* Subheader styling */
         .subheader {
             color: #ff4d4d;
@@ -154,6 +168,7 @@ st.markdown("""
             margin-top: 20px;
             margin-bottom: 10px;
         }
+
         /* Input fields styling */
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea {
@@ -162,6 +177,7 @@ st.markdown("""
             border: 1px solid #7597de !important;
             border-radius: 5px;
         }
+
         /* Box styling for sections (like Contact button) */
         .content-box {
             border: 1px solid #ffffff;
@@ -169,6 +185,7 @@ st.markdown("""
             padding: 20px;
             margin-top: 20px;
         }
+
         /* Button styling for other buttons */
         .stButton:not(.nav-bar .stButton) > button {
             background-color: #ff4d4d;
@@ -183,6 +200,7 @@ st.markdown("""
         .stButton:not(.nav-bar .stButton) > button:hover {
             background-color: #e63b3b;
         }
+
         /* Result styling */
         .result-not-spam {
             background-color: #1a4d3d;
@@ -200,12 +218,14 @@ st.markdown("""
             margin-top: 10px;
             font-weight: bold;
         }
+
         /* Note styling */
         .note {
             color: #b0b0b0;
             font-style: italic;
             margin-top: 5px;
         }
+
         /* Fade-in animation */
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -217,7 +237,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Horizontal Navigation Bar with Buttons
+# Horizontal Navigation Bar with Buttons (Fixed at the top)
 st.markdown('<div class="nav-bar fade-in">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([1, 1, 1])
 
@@ -227,7 +247,7 @@ with col1:
     # Add 'active' class to the button if it's the current page
     if st.session_state.current_page == "Home":
         st.markdown(
-            '<style>.nav-bar div[data-testid="stButton"][id*="nav_home"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_home"] > button { background-color: #ff4d4d !important; }</style>',
             unsafe_allow_html=True
         )
 
@@ -236,7 +256,7 @@ with col2:
         st.session_state.current_page = "Services"
     if st.session_state.current_page == "Services":
         st.markdown(
-            '<style>.nav-bar div[data-testid="stButton"][id*="nav_services"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_services"] > button { background-color: #ff4d4d !important; }</style>',
             unsafe_allow_html=True
         )
 
@@ -245,7 +265,7 @@ with col3:
         st.session_state.current_page = "Feedback"
     if st.session_state.current_page == "Feedback":
         st.markdown(
-            '<style>.nav-bar div[data-testid="stButton"][id*="nav_feedback"] > button { background-color: #ff4d4d; }</style>',
+            '<style>.nav-bar div[data-testid="stButton"][id*="nav_feedback"] > button { background-color: #ff4d4d !important; }</style>',
             unsafe_allow_html=True
         )
 
@@ -333,7 +353,7 @@ if page == "Home":
     
     # Verify Your Number section in a box
     st.markdown('<div class="content-box fade-in">', unsafe_allow_html=True)
-    st.subheader("Verify Your Number")
+    st.markdown('<div class="subheader">Verify Your Number</div>', unsafe_allow_html=True)
     st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
     name = st.text_input("Your Name", key="name_input")
     phone = st.text_input("Your Phone Number (e.g., +919876543210)", key="phone_input_home")
