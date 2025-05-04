@@ -188,20 +188,6 @@ st.markdown("""
         .stButton:not(.nav-bar .stButton) > button:hover {
             background-color: #e63b3b;
         }
-        /* Download button styling */
-        .stDownloadButton>button {
-            background-color: #f0c14b;
-            color: #2b1055;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-        }
-        .stDownloadButton>button:hover {
-            background-color: #d9a413;
-        }
         /* Result styling */
         .result-not-spam {
             background-color: #1a4d3d;
@@ -362,7 +348,7 @@ if page == "Home":
             if is_valid:
                 st.session_state.userdata[formatted_phone] = name
                 st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
-                st.info("Note: To persist this data, download the updated userdata from the Feedback page and update your GitHub repository.")
+                st.info("Note: Data will reset on app restart since the download section has been removed.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
         else:
@@ -454,7 +440,7 @@ elif page == "Services":
             if is_valid:
                 st.session_state.spam_numbers.add(formatted_feedback)
                 st.success(f"Phone number {formatted_feedback} has been reported as spam.")
-                st.info("Note: To persist this data, download the updated spam numbers from the Feedback page and update your GitHub repository.")
+                st.info("Note: Data will reset on app restart since the download section has been removed.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
 
@@ -466,46 +452,6 @@ elif page == "Feedback":
         if feedback_text.strip():
             st.session_state.feedback.append(feedback_text)
             st.success("Thank you for your feedback!")
-            st.info("Note: To persist this data, download the updated feedback from below and update your GitHub repository.")
+            st.info("Note: Data will reset on app restart since the download section has been removed.")
         else:
             st.warning("Please enter some feedback.")
-    
-    # Section to download collected data
-    st.markdown('<div class="subheader fade-in">📥 Download Collected Data</div>', unsafe_allow_html=True)
-    st.write("Download the data below to manually update your GitHub repository and persist it across app restarts.")
-    
-    # Download userdata
-    userdata_content = "\n".join([f"{name},{phone}" for phone, name in st.session_state.userdata.items()])
-    if userdata_content:
-        st.download_button(
-            label="Download Updated Userdata",
-            data=userdata_content,
-            file_name="updated_userdata.txt",
-            mime="text/plain"
-        )
-    else:
-        st.write("No user data collected yet.")
-    
-    # Download feedback
-    feedback_content = "\n".join(st.session_state.feedback)
-    if feedback_content:
-        st.download_button(
-            label="Download Updated Feedback",
-            data=feedback_content,
-            file_name="updated_feedback.txt",
-            mime="text/plain"
-        )
-    else:
-        st.write("No feedback collected yet.")
-    
-    # Download spam numbers
-    spam_numbers_content = "\n".join(st.session_state.spam_numbers)
-    if spam_numbers_content:
-        st.download_button(
-            label="Download Updated Spam Numbers",
-            data=spam_numbers_content,
-            file_name="updated_spam_numbers.txt",
-            mime="text/plain"
-        )
-    else:
-        st.write("No spam numbers collected yet.")
