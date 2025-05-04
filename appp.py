@@ -70,7 +70,8 @@ st.markdown("""
         /* Navigation bar styling */
         .nav-bar {
             background-color: #1a0d3d;
-            padding: 10px 20px;
+            padding: 10px 0; /* Remove side padding to extend full width */
+            width: 100%; /* Ensure full width */
             display: flex;
             justify-content: center;
             gap: 30px;
@@ -153,18 +154,13 @@ st.markdown("""
             margin-top: 20px;
             margin-bottom: 10px;
         }
-        /* Input container styling */
-        .input-container {
-            background-color: #2b1055;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-        }
-        .input-container input, .input-container textarea {
+        /* Input fields styling (remove purple-blue bars) */
+        .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea {
             background-color: #3b1a7a !important;
             color: #ffffff !important;
             border: 1px solid #7597de !important;
+            border-radius: 5px;
         }
         /* Translucent side box */
         .side-box {
@@ -359,9 +355,7 @@ if page == "Home":
 elif page == "Services":
     st.markdown('<div class="subheader fade-in">📲 Check Phone Number & SMS</div>', unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
         phone_number = st.text_input("Enter Phone Number (e.g., +919876543210):", key="phone_input_services")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     if st.button("Check Number"):
         if not phone_number.strip():
@@ -403,9 +397,7 @@ elif page == "Services":
     
     st.markdown('<div class="subheader fade-in">📩 SMS Spam Detector</div>', unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
         user_message = st.text_area("Enter SMS text:", key="sms_input")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     if st.button("Check SMS"):
         if not user_message.strip():
@@ -428,9 +420,7 @@ elif page == "Services":
     
     st.markdown('<div class="subheader fade-in">📝 Report a Spam Number</div>', unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="input-container fade-in">', unsafe_allow_html=True)
         feedback_phone = st.text_input("Enter a Spam Number to Report:", key="report_input")
-        st.markdown('</div>', unsafe_allow_html=True)
     
     if st.button("Submit Report"):
         if not feedback_phone.strip():
