@@ -1,8 +1,7 @@
-streamlit
-pandas
-scikit-learn
-joblib
-phonenumbers
 numpy
+pandas
+streamlit
+phonenumbers
+joblib
 requests
 psycopg2-binary
