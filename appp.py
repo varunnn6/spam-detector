@@ -459,11 +459,8 @@ elif page == "Services":
                     if formatted_feedback in spam_numbers:
                         updated_count = save_spam_number(formatted_feedback)
                         st.session_state.spam_numbers[formatted_feedback] = updated_count
-                        st.info(f"ℹ️ This number has been reported {updated_count} times.")
-                    else:
-                        updated_count = save_spam_number(formatted_feedback)
-                        st.session_state.spam_numbers[formatted_feedback] = updated_count
-                        st.success("🚨 The number has been successfully reported.")
+                        st.info(f"🚨 The number has been successfully reported")
+                        st.info(f"ℹ️ It has been reported {updated_count} times by the people.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
 
