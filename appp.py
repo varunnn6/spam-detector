@@ -291,7 +291,7 @@ elif page == "Services":
 
     # Tab 1: Search Number
     with tab1:
-        st.header("Search a Number")
+        st.header("Search a Number 🔍")
         phone_input = st.text_input("Enter phone number to check (e.g., +919876543210):", key="phone_input_services")
         if st.button("Search", key="search_button"):
             if not phone_input.strip():
@@ -343,8 +343,8 @@ elif page == "Services":
 
     # Tab 2: Check Spam Message
     with tab2:
-        st.header("Check Spam Messages")
-        user_message = st.text_area("Enter SMS text to check:", key="sms_input", height=100)
+        st.header("Check Spam Messages 💬")
+        user_message = st.text_area("Enter message text to check:", key="sms_input", height=100)
         SPAM_KEYWORDS = [
             "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
             "win", "congratulations", "money", "rupee", "reward", "lottery"
@@ -375,7 +375,7 @@ elif page == "Services":
 
     # Tab 3: Report Spam
     with tab3:
-        st.header("Report a Spam Number")
+        st.header("Report a Spam Number ⚠️")
         spam_input = st.text_input("Enter phone number to report as spam:", key="report_input")
         if st.button("Report Spam", key="report_spam_button"):
             if not spam_input.strip():
