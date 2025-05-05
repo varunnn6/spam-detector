@@ -248,45 +248,52 @@ st.markdown("""
 # Page Content
 page = st.session_state.current_page
 
-# Home Page
+# Home Page with Tabs
 if page == "Home":
-    st.header("Welcome to Spam Shield")
-    st.write("""
-        **Spam Shield** is your go-to platform for protecting yourself from spam calls and messages. 
-        With a single app, you can:
-        - Verify your phone number to build trust with others.
-        - Check if a phone number or SMS is spam.
-        - Report spam numbers to help keep the community safe.
-        
-        Join us in making communication safer and more reliable!
-    """)
-    
-    st.subheader("Verify Your Number")
-    st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
-    name = st.text_input("Your Name", key="name_input")
-    phone = st.text_input("Your Phone Number (e.g., +919876543210)", key="phone_input_home")
-    if st.button("Submit Verification"):
-        if name and phone:
-            formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
-            if is_valid:
-                st.session_state.userdata[formatted_phone] = name
-                # Save to Firestore in the background
-                save_userdata({formatted_phone: name})  # Save only the new entry
-                st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+    tab1, tab2 = st.tabs(["Introduction", "Verify Your Number"])
+
+    # Tab 1: Introduction
+    with tab1:
+        st.header("Welcome to Spam Shield")
+        st.write("""
+            **Spam Shield** is your go-to platform for protecting yourself from spam calls and messages. With a single app, you can:
+
+            • Verify your phone number to build trust with others.  
+            • Check Phone Number information.  
+            • Check if phone number and message is spam.  
+            • Report spam numbers to help keep the community safe.  
+
+            Join us in making communication safer and more reliable!
+        """)
+
+    # Tab 2: Verify Number
+    with tab2:
+        st.subheader("Verify Your Number")
+        st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
+        name = st.text_input("Your Name", key="name_input")
+        phone = st.text_input("Your Phone Number (e.g., +919876543210)", key="phone_input_home")
+        if st.button("Submit Verification"):
+            if name and phone:
+                formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
+                if is_valid:
+                    st.session_state.userdata[formatted_phone] = name
+                    # Save to Firestore in the background
+                    save_userdata({formatted_phone: name})  # Save only the new entry
+                    st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+                else:
+                    st.error("Invalid phone number. Please enter a valid number.")
             else:
-                st.error("Invalid phone number. Please enter a valid number.")
-        else:
-            st.warning("Please enter both name and phone number.")
+                st.warning("Please enter both name and phone number.")
 
 # Services Page with Tabs
 elif page == "Services":
-    tab1, tab2, tab3 = st.tabs(["🔍 Verify Number", "Check Spam Message", "🚨 Report Spam"])
+    tab1, tab2, tab3 = st.tabs(["🔍 Search Number", "💬 Check Spam Message", "🚨 Report Spam"])
 
-    # Tab 1: Verify Number
+    # Tab 1: Search Number
     with tab1:
-        st.header("Verify a Number")
-        phone_input = st.text_input("Enter phone number to verify:", key="phone_input_services")
-        if st.button("Verify", key="verify_button"):
+        st.header("Search a Number")
+        phone_input = st.text_input("Enter phone number to check (e.g., +919876543210):", key="phone_input_services")
+        if st.button("Search", key="search_button"):
             if not phone_input.strip():
                 st.warning("Please enter a phone number.")
             else:
@@ -322,10 +329,6 @@ elif page == "Services":
                         classification = "🚨 Spam"
                     if special_classification:
                         classification = f"{classification} ({special_classification})"
-                    if "Spam" in classification:
-                        st.error("⚠️ This number has been reported as spam!")
-                    else:
-                        st.success(f"✅ Verified! Name: {name}")
                     st.write(f"**Phone Number:** {formatted_number}")
                     st.write(f"**Associated Name:** {name}")
                     displayed_provider = api_provider if api_provider != "Unknown" else local_provider
