@@ -6,18 +6,28 @@ import joblib
 import requests
 import os
 import re
+import sqlite3
 from phonenumbers import carrier, geocoder, timezone
-from git import Repo
-import git
-import tempfile
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
-# Files for persistence
-USERDATA_FILE = "userdata.txt"
-FEEDBACK_FILE = "feedback.txt"
-SPAM_FILE = "spam_numbers.txt"
+# Database file path (use /data for Streamlit Cloud persistence)
+DB_FILE = "/data/data.db" if os.path.exists("/data") else "data.db"
+
+# Initialize SQLite database
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # Create tables if they don't exist
+    c.execute('''CREATE TABLE IF NOT EXISTS users (phone TEXT PRIMARY KEY, name TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS spam_numbers (phone TEXT PRIMARY KEY)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS feedback (entry TEXT)''')
+    conn.commit()
+    conn.close()
+
+# Initialize the database at startup
+init_db()
 
 # Initialize session state for user data and feedback
 if 'userdata' not in st.session_state:
@@ -27,93 +37,135 @@ if 'feedback' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Initialize spam numbers
-if 'spam_numbers' not in st.session_state:
-    st.session_state.spam_numbers = set()
-    if os.path.exists(SPAM_FILE):
-        with open(SPAM_FILE, 'r') as f:
-            st.session_state.spam_numbers.update(line.strip() for line in f if line.strip())
-
-# Function to commit and push changes to GitHub
-def commit_and_push(file_path, commit_message):
-    try:
-        # Use a temporary directory to clone the repo
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Clone the repository
-            repo_url = st.secrets["github"]["repo_url"]
-            token = st.secrets["github"]["token"]
-            auth_url = repo_url.replace("https://", f"https://{token}@")
-            repo = Repo.clone_from(auth_url, temp_dir)
-
-            # Copy the updated file to the cloned repo
-            import shutil
-            dest_path = os.path.join(temp_dir, os.path.basename(file_path))
-            shutil.copyfile(file_path, dest_path)
-
-            # Stage the file
-            repo.index.add([os.path.basename(file_path)])
-
-            # Commit changes
-            repo.index.commit(commit_message)
-
-            # Push to GitHub
-            origin = repo.remote(name='origin')
-            origin.push()
-
-        st.success(f"Successfully updated {file_path} in GitHub repository.")
-    except Exception as e:
-        st.error(f"Failed to push to GitHub: {str(e)}")
-
-# Load user data from file at startup
+# Load user data from database at startup
 def load_userdata():
     userdata = {}
     try:
-        with open(USERDATA_FILE, 'r') as f:
-            for line in f:
-                if line.strip():
-                    name, phone = line.strip().split(',')
-                    userdata[phone] = name
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(USERDATA_FILE, 'w') as f:
-            pass
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT name, phone FROM users")
+        for name, phone in c.fetchall():
+            userdata[phone] = name
+        conn.close()
+    except Exception as e:
+        st.error(f"Failed to load userdata: {str(e)}")
     return userdata
 
-# Save user data to file and push to GitHub
+# Save user data to database
 def save_userdata(userdata):
     try:
-        with open(USERDATA_FILE, 'w') as f:
-            for phone, name in userdata.items():
-                f.write(f"{name},{phone}\n")
-        commit_and_push(USERDATA_FILE, "Update userdata.txt with new user data")
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        for phone, name in userdata.items():
+            c.execute("INSERT OR REPLACE INTO users (phone, name) VALUES (?, ?)", (phone, name))
+        conn.commit()
+        conn.close()
     except Exception as e:
         st.error(f"Failed to save userdata: {str(e)}")
 
-# Load feedback from file at startup
+# Load feedback from database at startup
 def load_feedback():
     feedback = []
     try:
-        with open(FEEDBACK_FILE, 'r') as f:
-            feedback = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(FEEDBACK_FILE, 'w') as f:
-            pass
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT entry FROM feedback")
+        feedback = [row[0] for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        st.error(f"Failed to load feedback: {str(e)}")
     return feedback
 
-# Save feedback to file and push to GitHub
+# Save feedback to database
 def save_feedback(feedback):
     try:
-        with open(FEEDBACK_FILE, 'w') as f:
-            for entry in feedback:
-                f.write(f"{entry}\n")
-        commit_and_push(FEEDBACK_FILE, "Update feedback.txt with new feedback")
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        # Clear existing feedback
+        c.execute("DELETE FROM feedback")
+        # Insert new feedback
+        for entry in feedback:
+            c.execute("INSERT INTO feedback (entry) VALUES (?)", (entry,))
+        conn.commit()
+        conn.close()
     except Exception as e:
         st.error(f"Failed to save feedback: {str(e)}")
+
+# Load spam numbers from database at startup
+def load_spam_numbers():
+    spam_numbers = set()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT phone FROM spam_numbers")
+        spam_numbers.update(row[0] for row in c.fetchall())
+        conn.close()
+    except Exception as e:
+        st.error(f"Failed to load spam numbers: {str(e)}")
+    return spam_numbers
+
+# Save a spam number to database
+def save_spam_number(phone):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO spam_numbers (phone) VALUES (?)", (phone,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        st.error(f"Failed to save spam number: {str(e)}")
 
 # Load data into session state at startup
 st.session_state.userdata = load_userdata()
 st.session_state.feedback = load_feedback()
+
+# Initialize and Load Spam Numbers
+if 'spam_numbers' not in st.session_state:
+    st.session_state.spam_numbers = load_spam_numbers()
+
+# Add Initial Spam Numbers
+initial_spam_numbers = {
+    "+917397947365", "+917550098431", "+919150228347", "+918292577122", "+919060883501",
+    "+919163255112", "+916002454613", "+918292042103", "+917091184923", "+917633959085",
+    "+919693115624", "+918337079723", "+919608381483", "+918838591478", "+917250968907",
+    "+916200662711", "+917369089716", "+919088970355", "+917667394441", "+918807044585",
+    "+917352384386", "+918340444510", "+919874460525", "+916289657859", "+916002485411",
+    "+917909021203", "+916002454615", "+916383283037", "+917449664537", "+919741170745",
+    "+918789709789", "+916205600945", "+916002545812", "+916206416578", "+916901837050",
+    "+917044518143", "+918478977217", "+919123303151", "+919330172957", "+919268002125",
+    "+919088524731", "+919135410272", "+917484019313", "+917479066971", "+919811637369",
+    "+917718732612", "+919399126358", "+919090598938", "+919088353903", "+919093956065",
+    "+919407302916", "+917505749890", "+919433656320", "+916290315431", "+918979703265",
+    "+918551058079", "+916289742275", "+918877673872", "+918357988848", "+919354003963",
+    "+918478984451", "+919653658918", "+918979035541", "+918697969426", "+919414039565",
+    "+918617436699", "+918513937114", "+917044269512", "+917449958313", "+918670869956",
+    "+919144317215", "+917984872576", "+919335133710", "+919330204120", "+918218991896",
+    "+917699709165", "+917699709161", "+918849244894", "+916294274312", "+918514003884",
+    "+919674129982", "+919144234677", "+918481858603", "+918514007134", "+917007976390",
+    "+919931788848", "+918867887132", "+919546095125", "+918335916573", "+916202545132",
+    "+918850565921", "+917033780636", "+919454304627", "+918409687843", "+916289693761",
+    "+918902164005", "+918604050209", "+919330780675", "+916203163947", "+919093349748",
+    "+919073753239", "+919834464651", "+919340112087", "+917360849405", "+919950071842",
+    "+917903785368", "+919987166461", "+917408553440", "+916289932825", "+919603663119",
+    "+916200151797", "+918343833796", "+918310211662", "+919093672697", "+919657837583",
+    "+919088163475", "+918609168861", "+918513938098", "+918830681203", "+918208769851",
+    "+916282501341", "+919798001380", "+917498383512", "+918609421406", "+916289779668",
+    "+919992923927", "+919992443651", "+919330297159", "+918345958566", "+918927297419",
+    "+917223804777", "+917837844941", "+919340852370", "+919340852365", "+919490584696",
+    "+919128648444", "+918708959318", "+917464005751", "+919014293267", "+918709948480",
+    "+919088385153", "+918269858278", "+919211344423", "+917759963120", "+919890392825",
+    "+916395686313", "+919798853892", "+918002694366", "+918689831418", "+918696065048",
+    "+918918557298", "+918515831303", "+918768812814", "+918168813388", "+916205802536",
+    "+919328446819", "+919144530689", "+917076891749", "+919776030244", "+919330363299",
+    "+916297694538", "+919159160470", "+916289887928"
+}
+# Add initial spam numbers to database if not already present
+for number in initial_spam_numbers:
+    save_spam_number(number)
+st.session_state.spam_numbers.update(initial_spam_numbers)
+
+# Reference to spam_numbers for easier use
+spam_numbers = st.session_state.spam_numbers
 
 # Load Trained Machine Learning Model and Vectorizer
 @st.cache_resource
@@ -124,18 +176,10 @@ def load_model_and_vectorizer():
 
 model, vectorizer = load_model_and_vectorizer()
 
-# Add Initial Spam Numbers (unchanged)
-initial_spam_numbers = {
-    "+917397947365", "+917550098431", "+919150228347", "+918292577122", "+919060883501",
-    # ... (your existing spam numbers)
-}
-st.session_state.spam_numbers.update(initial_spam_numbers)
-spam_numbers = st.session_state.spam_numbers
-
-# Numlookup API Key (unchanged)
+# Numlookup API Key
 API_KEY = "num_live_gAgRGbG0st9WUyf8sR98KqlcKb5qB0SkrZFEpIm6"
 
-# Function to Get Number Info using Numlookup API (unchanged)
+# Function to Get Number Info using Numlookup API
 @st.cache_data
 def get_numlookup_info(phone_number):
     try:
@@ -144,6 +188,7 @@ def get_numlookup_info(phone_number):
         response = requests.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
+
         service_provider = data.get("carrier", "Unknown")
         location = data.get("location", "Unknown")
         line_type = data.get("line_type", "Unknown")
@@ -154,7 +199,7 @@ def get_numlookup_info(phone_number):
         st.error(f"Numlookup API error: {str(e)}. Check your API key or visit https://numlookupapi.com for support.")
         return "Unknown", "Unknown", "Unknown", "Unknown"
 
-# Function to Parse and Validate Phone Number (unchanged)
+# Function to Parse and Validate Phone Number
 def parse_phone_number(phone_number):
     try:
         parsed_number = phonenumbers.parse(phone_number, None)
@@ -169,7 +214,7 @@ def parse_phone_number(phone_number):
     except phonenumbers.NumberParseException:
         return None, None, None, None, False
 
-# Navigation Sidebar (unchanged)
+# Navigation Sidebar
 with st.sidebar:
     st.header("Navigation")
     if st.button("Home", key="nav_home"):
@@ -179,7 +224,7 @@ with st.sidebar:
     if st.button("Feedback", key="nav_feedback"):
         st.session_state.current_page = "Feedback"
 
-# JavaScript for sidebar auto-close (unchanged)
+# JavaScript to automatically close the sidebar after a button is clicked
 st.markdown("""
 <script>
     console.log("JavaScript loaded for sidebar auto-close");
@@ -245,7 +290,6 @@ if page == "Home":
             formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
             if is_valid:
                 st.session_state.userdata[formatted_phone] = name
-                # Immediately save to file and push to GitHub
                 save_userdata(st.session_state.userdata)
                 st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
             else:
@@ -255,7 +299,6 @@ if page == "Home":
 
 # Services Page
 elif page == "Services":
-    # Check Phone Number & SMS
     st.subheader("📲 Check if a Phone Number & SMS is Spam")
     phone_number = st.text_input("Enter Phone Number (e.g., +919876543210):", key="phone_input_services")
     if st.button("Check Number"):
@@ -306,7 +349,6 @@ elif page == "Services":
                 st.write(f"🌎 **Country:** {country}")
                 st.write(f"🔍 **Classification:** {classification}")
 
-    # SMS Spam Detection
     st.subheader("📩 SMS Spam Detector")
     user_message = st.text_area("Enter SMS text:", key="sms_input")
     SPAM_KEYWORDS = [
@@ -333,7 +375,6 @@ elif page == "Services":
             if spam_keyword_count > 0 and result == "🚨 Spam":
                 st.write(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
 
-    # Report a Spam Number
     st.subheader("📝 Report a Spam Number")
     feedback_phone = st.text_input("Enter a Spam Number to Report:", key="report_input")
     if st.button("Submit Report"):
@@ -343,13 +384,8 @@ elif page == "Services":
             formatted_feedback, _, _, _, is_valid = parse_phone_number(feedback_phone)
             if is_valid:
                 st.session_state.spam_numbers.add(formatted_feedback)
-                try:
-                    with open(SPAM_FILE, 'a') as f:
-                        f.write(f"{formatted_feedback}\n")
-                    commit_and_push(SPAM_FILE, f"Add spam number {formatted_feedback} to spam_numbers.txt")
-                    st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
-                except Exception as e:
-                    st.error(f"Failed to save spam number: {str(e)}")
+                save_spam_number(formatted_feedback)
+                st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
 
@@ -360,7 +396,6 @@ elif page == "Feedback":
     if st.button("Submit Feedback"):
         if feedback_text.strip():
             st.session_state.feedback.append(feedback_text)
-            # Immediately save to file and push to GitHub
             save_feedback(st.session_state.feedback)
             st.success("Thank you for your feedback!")
         else:
