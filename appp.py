@@ -14,41 +14,6 @@ from google.cloud.firestore_v1 import DocumentReference
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
-# Custom CSS for styling the interface
-st.markdown("""
-<style>
-    .section-box {
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-        background-color: #ffffff;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-    .search-bar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        padding: 5px;
-        background-color: #f9f9f9;
-    }
-    .search-bar input {
-        border: none !important;
-        background: transparent !important;
-        outline: none !important;
-        width: 100%;
-    }
-    .section-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 10px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 # Initialize Firebase Firestore (silently, without UI messages)
 try:
     cred_dict = json.loads(st.secrets["firebase"]["credentials"])
@@ -313,80 +278,76 @@ if page == "Home":
         else:
             st.warning("Please enter both name and phone number.")
 
-# Services Page
+# Services Page with Tabs
 elif page == "Services":
-    # Section 1: Search Number
-    with st.container():
-        st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title"><span>📲</span> Search Number</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            with st.container():
-                st.markdown('<div class="search-bar">', unsafe_allow_html=True)
-                st.markdown('🔍', unsafe_allow_html=True)
-                phone_number = st.text_input("", placeholder="Enter phone number (e.g., +919876543210)", key="phone_input_services", label_visibility="collapsed")
-                st.markdown('</div>', unsafe_allow_html=True)
-        with col2:
-            if st.button("Search", key="search_button"):
-                if not phone_number.strip():
-                    st.warning("Please enter a phone number.")
-                else:
-                    formatted_number, local_provider, region, time_zone, is_valid = parse_phone_number(phone_number)
-                    if not is_valid:
-                        st.error("Invalid phone number. Please enter a valid number.")
-                    else:
-                        api_provider, location, line_type, country = get_numlookup_info(formatted_number)
-                        name = st.session_state.userdata.get(formatted_number, "Unknown")
-                        number_without_country = formatted_number
-                        if formatted_number.startswith("+91"):
-                            number_without_country = formatted_number[3:]
-                        classification = "✅ Not Spam"
-                        special_classification = None
-                        if number_without_country.startswith("14"):
-                            st.session_state.spam_numbers.add(formatted_number)
-                            classification = "🚨 Spam"
-                        elif number_without_country.startswith("88265"):
-                            st.session_state.spam_numbers.add(formatted_number)
-                            classification = "🚨 Spam"
-                        elif number_without_country.startswith("796512"):
-                            st.session_state.spam_numbers.add(formatted_number)
-                            classification = "🚨 Spam"
-                        elif number_without_country.startswith("16"):
-                            special_classification = "Government or Regulators"
-                            classification = "ℹ️ Not Spam"
-                        if formatted_number in spam_numbers:
-                            classification = "🚨 Spam"
-                        if formatted_number.startswith("+140") or formatted_number.startswith("140"):
-                            st.session_state.spam_numbers.add(formatted_number)
-                            classification = "🚨 Spam"
-                        if local_provider == "Unknown" and api_provider == "Unknown":
-                            classification = "🚨 Spam"
-                        if special_classification:
-                            classification = f"{classification} ({special_classification})"
-                        st.write(f"**Phone Number:** {formatted_number}")
-                        st.write(f"**Associated Name:** {name}")
-                        displayed_provider = api_provider if api_provider != "Unknown" else local_provider
-                        st.write(f"📶 **Service Provider:** {displayed_provider}")
-                        if displayed_provider != "Unknown":
-                            st.write("Note: The provider may have changed due to Mobile Number Portability.")
-                        st.write(f"🌍 **Region/City:** {location if location != 'Unknown' else region}")
-                        st.write(f"⏰ **Time Zone:** {time_zone}")
-                        st.write(f"📞 **Line Type:** {line_type}")
-                        st.write(f"🌎 **Country:** {country}")
-                        st.write(f"🔍 **Classification:** {classification}")
-        st.markdown('</div>', unsafe_allow_html=True)
+    tab1, tab2, tab3 = st.tabs(["🔍 Verify Number", "Check Spam Message", "🚨 Report Spam"])
 
-    # Section 2: Check Spam Message
-    with st.container():
-        st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title"><span>📩</span> Check Spam Message</div>', unsafe_allow_html=True)
+    # Tab 1: Verify Number
+    with tab1:
+        st.header("Verify a Number")
+        phone_input = st.text_input("Enter phone number to verify:", key="phone_input_services")
+        if st.button("Verify", key="verify_button"):
+            if not phone_input.strip():
+                st.warning("Please enter a phone number.")
+            else:
+                formatted_number, local_provider, region, time_zone, is_valid = parse_phone_number(phone_input)
+                if not is_valid:
+                    st.error("Invalid phone number. Please enter a valid number.")
+                else:
+                    api_provider, location, line_type, country = get_numlookup_info(formatted_number)
+                    name = st.session_state.userdata.get(formatted_number, "Unknown")
+                    number_without_country = formatted_number
+                    if formatted_number.startswith("+91"):
+                        number_without_country = formatted_number[3:]
+                    classification = "✅ Not Spam"
+                    special_classification = None
+                    if number_without_country.startswith("14"):
+                        st.session_state.spam_numbers.add(formatted_number)
+                        classification = "🚨 Spam"
+                    elif number_without_country.startswith("88265"):
+                        st.session_state.spam_numbers.add(formatted_number)
+                        classification = "🚨 Spam"
+                    elif number_without_country.startswith("796512"):
+                        st.session_state.spam_numbers.add(formatted_number)
+                        classification = "🚨 Spam"
+                    elif number_without_country.startswith("16"):
+                        special_classification = "Government or Regulators"
+                        classification = "ℹ️ Not Spam"
+                    if formatted_number in spam_numbers:
+                        classification = "🚨 Spam"
+                    if formatted_number.startswith("+140") or formatted_number.startswith("140"):
+                        st.session_state.spam_numbers.add(formatted_number)
+                        classification = "🚨 Spam"
+                    if local_provider == "Unknown" and api_provider == "Unknown":
+                        classification = "🚨 Spam"
+                    if special_classification:
+                        classification = f"{classification} ({special_classification})"
+                    if "Spam" in classification:
+                        st.error("⚠️ This number has been reported as spam!")
+                    else:
+                        st.success(f"✅ Verified! Name: {name}")
+                    st.write(f"**Phone Number:** {formatted_number}")
+                    st.write(f"**Associated Name:** {name}")
+                    displayed_provider = api_provider if api_provider != "Unknown" else local_provider
+                    st.write(f"📶 **Service Provider:** {displayed_provider}")
+                    if displayed_provider != "Unknown":
+                        st.write("Note: The provider may have changed due to Mobile Number Portability.")
+                    st.write(f"🌍 **Region/City:** {location if location != 'Unknown' else region}")
+                    st.write(f"⏰ **Time Zone:** {time_zone}")
+                    st.write(f"📞 **Line Type:** {line_type}")
+                    st.write(f"🌎 **Country:** {country}")
+                    st.write(f"🔍 **Classification:** {classification}")
+
+    # Tab 2: Check Spam Message
+    with tab2:
+        st.header("Check Spam Messages")
         user_message = st.text_area("Enter SMS text to check:", key="sms_input", height=100)
         SPAM_KEYWORDS = [
             "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
             "win", "congratulations", "money", "rupee", "reward", "lottery"
         ]
         TRUSTED_SOURCES = ["-SBI", "-HDFC", "-ICICI"]
-        if st.button("Check SMS", key="check_sms_button"):
+        if st.button("Check Spam", key="check_spam_button"):
             if not user_message.strip():
                 st.warning("Please enter a message.")
             else:
@@ -401,28 +362,32 @@ elif page == "Services":
                     result = "🚨 Spam"
                 else:
                     result = "✅ Not Spam"
+                if "Spam" in result:
+                    st.success("✅ This message is classified as spam.")
+                else:
+                    st.info("ℹ️ This message is not classified as spam.")
                 st.write(f"🔍 **Classification:** {result}")
                 if spam_keyword_count > 0 and result == "🚨 Spam":
                     st.write(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
-        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Section 3: Report a Spam Number (styled as per the PDF)
-    with st.container():
-        st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.markdown('<div class="section-title"><span>📝</span> Report a Spam Number</div>', unsafe_allow_html=True)
-        feedback_phone = st.text_input("Enter phone number to report as spam:", key="report_input")
+    # Tab 3: Report Spam
+    with tab3:
+        st.header("Report a Spam Number")
+        spam_input = st.text_input("Enter phone number to report as spam:", key="report_input")
         if st.button("Report Spam", key="report_spam_button"):
-            if not feedback_phone.strip():
+            if not spam_input.strip():
                 st.warning("Please enter a valid phone number to report.")
             else:
-                formatted_feedback, _, _, _, is_valid = parse_phone_number(feedback_phone)
+                formatted_feedback, _, _, _, is_valid = parse_phone_number(spam_input)
                 if is_valid:
-                    st.session_state.spam_numbers.add(formatted_feedback)
-                    save_spam_number(formatted_feedback)
-                    st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
+                    if formatted_feedback in spam_numbers:
+                        st.info("ℹ️ This number is already reported as spam.")
+                    else:
+                        st.session_state.spam_numbers.add(formatted_feedback)
+                        save_spam_number(formatted_feedback)
+                        st.success("🚨 Spam number reported successfully.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
-        st.markdown('</div>', unsafe_allow_html=True)
 
 # Feedback Page
 elif page == "Feedback":
