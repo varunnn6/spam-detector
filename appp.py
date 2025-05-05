@@ -436,10 +436,10 @@ elif page == "Services":
                     result = "🚨 Spam"
                 else:
                     result = "✅ Not Spam"
-                if "Spam" in result:
-                    st.error("✅ This message is classified as spam.")
-                else:
-                    st.success("ℹ️ This message is not classified as spam.")
+                if "🚨 Spam" in result:
+                    st.error("✅ This message is a spam.")
+                if "✅" in result:
+                    st.success("This message is not a spam.")
                 st.write(f"🔍 **Classification:** {result}")
                 if spam_keyword_count > 0 and result == "🚨 Spam":
                     st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
