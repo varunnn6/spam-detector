@@ -4,30 +4,25 @@ import streamlit as st
 import phonenumbers
 import joblib
 import requests
-import os
 import re
-import sqlite3
+import psycopg2
 from phonenumbers import carrier, geocoder, timezone
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
-# Database file path (use /data for Streamlit Cloud persistence)
-DB_FILE = "/data/data.db" if os.path.exists("/data") else "data.db"
-
-# Initialize SQLite database
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    # Create tables if they don't exist
-    c.execute('''CREATE TABLE IF NOT EXISTS users (phone TEXT PRIMARY KEY, name TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS spam_numbers (phone TEXT PRIMARY KEY)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS feedback (entry TEXT)''')
-    conn.commit()
-    conn.close()
-
-# Initialize the database at startup
-init_db()
+# Initialize Supabase connection using Streamlit secrets
+try:
+    conn = psycopg2.connect(
+        dbname=st.secrets["supabase"]["dbname"],
+        user=st.secrets["supabase"]["user"],
+        password=st.secrets["supabase"]["password"],
+        host=st.secrets["supabase"]["host"],
+        port=st.secrets["supabase"]["port"]
+    )
+except Exception as e:
+    st.error(f"Failed to connect to Supabase: {str(e)}")
+    st.stop()
 
 # Initialize session state for user data and feedback
 if 'userdata' not in st.session_state:
@@ -37,81 +32,76 @@ if 'feedback' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Load user data from database at startup
+# Load user data from Supabase at startup
 def load_userdata():
     userdata = {}
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT name, phone FROM users")
-        for name, phone in c.fetchall():
+        c.execute("SELECT phone, name FROM users")
+        for phone, name in c.fetchall():
             userdata[phone] = name
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to load userdata: {str(e)}")
     return userdata
 
-# Save user data to database
+# Save user data to Supabase
 def save_userdata(userdata):
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         for phone, name in userdata.items():
-            c.execute("INSERT OR REPLACE INTO users (phone, name) VALUES (?, ?)", (phone, name))
+            c.execute("INSERT INTO users (phone, name) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = %s", 
+                      (phone, name, name))
         conn.commit()
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to save userdata: {str(e)}")
 
-# Load feedback from database at startup
+# Load feedback from Supabase at startup
 def load_feedback():
     feedback = []
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT entry FROM feedback")
         feedback = [row[0] for row in c.fetchall()]
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to load feedback: {str(e)}")
     return feedback
 
-# Save feedback to database
+# Save feedback to Supabase
 def save_feedback(feedback):
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         # Clear existing feedback
         c.execute("DELETE FROM feedback")
         # Insert new feedback
         for entry in feedback:
-            c.execute("INSERT INTO feedback (entry) VALUES (?)", (entry,))
+            c.execute("INSERT INTO feedback (entry) VALUES (%s)", (entry,))
         conn.commit()
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to save feedback: {str(e)}")
 
-# Load spam numbers from database at startup
+# Load spam numbers from Supabase at startup
 def load_spam_numbers():
     spam_numbers = set()
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT phone FROM spam_numbers")
         spam_numbers.update(row[0] for row in c.fetchall())
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to load spam numbers: {str(e)}")
     return spam_numbers
 
-# Save a spam number to database
+# Save a spam number to Supabase
 def save_spam_number(phone):
     try:
-        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("INSERT OR IGNORE INTO spam_numbers (phone) VALUES (?)", (phone,))
+        c.execute("INSERT INTO spam_numbers (phone) VALUES (%s) ON CONFLICT (phone) DO NOTHING", (phone,))
         conn.commit()
-        conn.close()
+        c.close()
     except Exception as e:
         st.error(f"Failed to save spam number: {str(e)}")
 
@@ -159,7 +149,7 @@ initial_spam_numbers = {
     "+919328446819", "+919144530689", "+917076891749", "+919776030244", "+919330363299",
     "+916297694538", "+919159160470", "+916289887928"
 }
-# Add initial spam numbers to database if not already present
+# Add initial spam numbers to Supabase if not already present
 for number in initial_spam_numbers:
     save_spam_number(number)
 st.session_state.spam_numbers.update(initial_spam_numbers)
@@ -400,3 +390,11 @@ elif page == "Feedback":
             st.success("Thank you for your feedback!")
         else:
             st.warning("Please enter some feedback.")
+
+# Close the database connection when the app shuts down
+def on_shutdown():
+    conn.close()
+
+# Register the shutdown function
+import atexit
+atexit.register(on_shutdown)
