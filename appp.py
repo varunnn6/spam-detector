@@ -430,7 +430,7 @@ elif page == "Services":
                 spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
                 user_message_vectorized = vectorizer.transform([user_message])
                 prediction = model.predict(user_message_vectorized)[0]
-               if is_trusted and spam_keyword_count <= 1:
+                if is_trusted and spam_keyword_count <= 1:
                     result = "✅ Not Spam"
                 elif spam_keyword_count >= 2 or prediction == 1:
                     result = "🚨 Spam"
