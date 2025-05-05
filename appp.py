@@ -1,5 +1,3 @@
-in this code in check spam msg  if its spam show out put msg in red and if it is not spam than show msg in green
-
 import numpy as np
 import pandas as pd
 import streamlit as st
