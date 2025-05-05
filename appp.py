@@ -5,24 +5,30 @@ import phonenumbers
 import joblib
 import requests
 import re
-import psycopg2
+import firebase_admin
+from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
+import json
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
-# Initialize Supabase connection using Streamlit secrets
+# Initialize Firebase Firestore
 try:
-    conn = psycopg2.connect(
-        dbname=st.secrets["supabase"]["dbname"],
-        user=st.secrets["supabase"]["user"],
-        password=st.secrets["supabase"]["password"],
-        host=st.secrets["supabase"]["host"],
-        port=st.secrets["supabase"]["port"]
-    )
+    # Parse the credentials from secrets.toml
+    cred_dict = json.loads(st.secrets["firebase"]["credentials"])
+    cred = credentials.Certificate(cred_dict)
+    if not firebase_admin._apps:  # Check if app is already initialized
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    st.success("Successfully connected to Firestore!")
 except Exception as e:
-    st.error(f"Failed to connect to Supabase: {str(e)}")
-    st.stop()
+    st.error(f"Failed to connect to Firestore: {str(e)}")
+    st.warning("Running in limited mode without database persistence. Some features may not work.")
+    db = None
+    st.session_state.userdata = st.session_state.get('userdata', {})
+    st.session_state.feedback = st.session_state.get('feedback', [])
+    st.session_state.spam_numbers = st.session_state.get('spam_numbers', set())
 
 # Initialize session state for user data and feedback
 if 'userdata' not in st.session_state:
@@ -32,76 +38,88 @@ if 'feedback' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# Load user data from Supabase at startup
+# Load user data from Firestore at startup
 def load_userdata():
+    if not db:
+        return st.session_state.userdata
     userdata = {}
     try:
-        c = conn.cursor()
-        c.execute("SELECT phone, name FROM users")
-        for phone, name in c.fetchall():
+        users_ref = db.collection('users')
+        docs = users_ref.stream()
+        for doc in docs:
+            data = doc.to_dict()
+            phone = doc.id  # Firestore document ID is the phone number
+            name = data.get('name', 'Unknown')
             userdata[phone] = name
-        c.close()
     except Exception as e:
         st.error(f"Failed to load userdata: {str(e)}")
     return userdata
 
-# Save user data to Supabase
+# Save user data to Firestore
 def save_userdata(userdata):
+    if not db:
+        st.session_state.userdata = userdata
+        return
     try:
-        c = conn.cursor()
+        users_ref = db.collection('users')
         for phone, name in userdata.items():
-            c.execute("INSERT INTO users (phone, name) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = %s", 
-                      (phone, name, name))
-        conn.commit()
-        c.close()
+            users_ref.document(phone).set({'name': name})
     except Exception as e:
         st.error(f"Failed to save userdata: {str(e)}")
 
-# Load feedback from Supabase at startup
+# Load feedback from Firestore at startup
 def load_feedback():
+    if not db:
+        return st.session_state.feedback
     feedback = []
     try:
-        c = conn.cursor()
-        c.execute("SELECT entry FROM feedback")
-        feedback = [row[0] for row in c.fetchall()]
-        c.close()
+        feedback_ref = db.collection('feedback')
+        docs = feedback_ref.stream()
+        for doc in docs:
+            data = doc.to_dict()
+            feedback.append(data.get('entry', ''))
     except Exception as e:
         st.error(f"Failed to load feedback: {str(e)}")
     return feedback
 
-# Save feedback to Supabase
+# Save feedback to Firestore
 def save_feedback(feedback):
+    if not db:
+        st.session_state.feedback = feedback
+        return
     try:
-        c = conn.cursor()
+        feedback_ref = db.collection('feedback')
         # Clear existing feedback
-        c.execute("DELETE FROM feedback")
+        for doc in feedback_ref.stream():
+            doc.reference.delete()
         # Insert new feedback
-        for entry in feedback:
-            c.execute("INSERT INTO feedback (entry) VALUES (%s)", (entry,))
-        conn.commit()
-        c.close()
+        for i, entry in enumerate(feedback):
+            feedback_ref.document(str(i)).set({'entry': entry})
     except Exception as e:
         st.error(f"Failed to save feedback: {str(e)}")
 
-# Load spam numbers from Supabase at startup
+# Load spam numbers from Firestore at startup
 def load_spam_numbers():
+    if not db:
+        return st.session_state.spam_numbers
     spam_numbers = set()
     try:
-        c = conn.cursor()
-        c.execute("SELECT phone FROM spam_numbers")
-        spam_numbers.update(row[0] for row in c.fetchall())
-        c.close()
+        spam_ref = db.collection('spam_numbers')
+        docs = spam_ref.stream()
+        for doc in docs:
+            spam_numbers.add(doc.id)  # Document ID is the phone number
     except Exception as e:
         st.error(f"Failed to load spam numbers: {str(e)}")
     return spam_numbers
 
-# Save a spam number to Supabase
+# Save a spam number to Firestore
 def save_spam_number(phone):
+    if not db:
+        st.session_state.spam_numbers.add(phone)
+        return
     try:
-        c = conn.cursor()
-        c.execute("INSERT INTO spam_numbers (phone) VALUES (%s) ON CONFLICT (phone) DO NOTHING", (phone,))
-        conn.commit()
-        c.close()
+        spam_ref = db.collection('spam_numbers')
+        spam_ref.document(phone).set({})  # Empty document, just using the ID
     except Exception as e:
         st.error(f"Failed to save spam number: {str(e)}")
 
@@ -149,7 +167,7 @@ initial_spam_numbers = {
     "+919328446819", "+919144530689", "+917076891749", "+919776030244", "+919330363299",
     "+916297694538", "+919159160470", "+916289887928"
 }
-# Add initial spam numbers to Supabase if not already present
+# Add initial spam numbers to Firestore if not already present
 for number in initial_spam_numbers:
     save_spam_number(number)
 st.session_state.spam_numbers.update(initial_spam_numbers)
@@ -390,11 +408,3 @@ elif page == "Feedback":
             st.success("Thank you for your feedback!")
         else:
             st.warning("Please enter some feedback.")
-
-# Close the database connection when the app shuts down
-def on_shutdown():
-    conn.close()
-
-# Register the shutdown function
-import atexit
-atexit.register(on_shutdown)
