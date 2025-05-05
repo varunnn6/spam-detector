@@ -315,24 +315,24 @@ if page == "Home":
 
     # Tab 1: Introduction
     with tab1:
-        st.header("Welcome to Spam Shield")
+        st.header("Welcome to Spam Shield ⚔️")
         st.write("""
-            **Spam Shield** is your go-to platform for protecting yourself from spam calls and messages. With a single app, you can:
+            **Spam Shield** is your go-to platform for protecting yourself from spam calls and messages. With a single web app, you can:
 
-            • Verify your phone number to build trust with others.  
-            • Check Phone Number information.  
-            • Check if phone number and message is spam.  
-            • Report spam numbers to help keep the community safe.  
+            ✅: Verify your phone number to build trust with others.  
+            🔎: Check Phone Number information .  
+            ❓: Check if phone number and message is spam.  
+            🚩: Report spam numbers to help keep the community safe.  
 
-            Join us in making communication safer and more reliable!
+            Join us in making communication safer and more reliable 🫂☺️!
         """)
 
     # Tab 2: Verify Number
     with tab2:
-        st.subheader("Verify Your Number")
+        st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
         name = st.text_input("Your Name", key="name_input")
-        phone = st.text_input("Your Phone Number (e.g., +919876543210)", key="phone_input_home")
+        phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
         if st.button("Submit Verification"):
             if name and phone:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
