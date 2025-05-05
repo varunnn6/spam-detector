@@ -437,12 +437,12 @@ elif page == "Services":
                 else:
                     result = "✅ Not Spam"
                 if "Spam" in result:
-                    st.success("✅ This message is classified as spam.")
+                    st.error("✅ This message is classified as spam.")
                 else:
-                    st.info("ℹ️ This message is not classified as spam.")
+                    st.success("ℹ️ This message is not classified as spam.")
                 st.write(f"🔍 **Classification:** {result}")
                 if spam_keyword_count > 0 and result == "🚨 Spam":
-                    st.write(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
+                    st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keywords detected.")
 
     # Tab 3: Report Spam
     with tab3:
@@ -459,8 +459,8 @@ elif page == "Services":
                     if formatted_feedback in spam_numbers:
                         updated_count = save_spam_number(formatted_feedback)
                         st.session_state.spam_numbers[formatted_feedback] = updated_count
-                        st.info(f"🚨 The number has been successfully reported")
-                        st.info(f"ℹ️ It has been reported {updated_count} times by the people.")
+                        st.success(f"🚨 The number has been successfully reported")
+                        st.info(f"It has been reported {updated_count} times by the people.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
 
