@@ -37,7 +37,7 @@ except Exception as e:
     db = None
     st.session_state.userdata = st.session_state.get('userdata', {})
     st.session_state.feedback = st.session_state.get('feedback', [])
-    st.session_state.spam_numbers = st.session_state.get('spam_numbers', set())
+    st.session_state.spam_numbers = st.session_state.get('spam_numbers', {})
 
 # Initialize session state
 if 'userdata' not in st.session_state:
@@ -119,24 +119,37 @@ def save_feedback(feedback):
 def load_spam_numbers():
     if not db:
         return st.session_state.spam_numbers
-    spam_numbers = set()
+    spam_numbers = {}
     try:
         spam_ref = db.collection('spam_numbers').limit(500)
         docs = spam_ref.stream()
         for doc in docs:
-            spam_numbers.add(doc.id)
+            data = doc.to_dict()
+            phone = doc.id
+            report_count = data.get('report_count', 1)  # Default to 1 if not set
+            spam_numbers[phone] = report_count
     except Exception as e:
         pass  # Silently handle errors
     return spam_numbers
 
-# Save a spam number to Firestore asynchronously
+# Save a spam number to Firestore asynchronously with report count
 def save_spam_number(phone):
     if not db:
-        st.session_state.spam_numbers.add(phone)
+        if phone in st.session_state.spam_numbers:
+            st.session_state.spam_numbers[phone] += 1
+        else:
+            st.session_state.spam_numbers[phone] = 1
         return
     try:
-        spam_ref = db.collection('spam_numbers')
-        spam_ref.document(phone).set({}, merge=True)  # Minimal write
+        spam_ref = db.collection('spam_numbers').document(phone)
+        doc = spam_ref.get()
+        if doc.exists:
+            # Increment the report count
+            current_count = doc.to_dict().get('report_count', 1)
+            spam_ref.update({'report_count': current_count + 1})
+        else:
+            # First report
+            spam_ref.set({'report_count': 1})
     except Exception as e:
         pass  # Silently handle errors
 
@@ -148,45 +161,47 @@ st.session_state.feedback = load_feedback()
 if 'spam_numbers' not in st.session_state:
     st.session_state.spam_numbers = load_spam_numbers()
 
-# Define initial spam numbers (reduced for testing; add more as needed)
+# Define initial spam numbers with report counts (for testing)
 initial_spam_numbers = {
-    "+917397947365", "+917550098431", "+919150228347", "+918292577122", "+919060883501",
-    "+919163255112", "+916002454613", "+918292042103", "+917091184923", "+917633959085",
-    "+919693115624", "+918337079723", "+919608381483", "+918838591478", "+917250968907",
-    "+916200662711", "+917369089716", "+919088970355", "+917667394441", "+918807044585",
-    "+917352384386", "+918340444510", "+919874460525", "+916289657859", "+916002485411",
-    "+917909021203", "+916002454615", "+916383283037", "+917449664537", "+919741170745",
-    "+918789709789", "+916205600945", "+916002545812", "+916206416578", "+916901837050",
-    "+917044518143", "+918478977217", "+919123303151", "+919330172957", "+919268002125",
-    "+919088524731", "+919135410272", "+917484019313", "+917479066971", "+919811637369",
-    "+917718732612", "+919399126358", "+919090598938", "+919088353903", "+919093956065",
-    "+919407302916", "+917505749890", "+919433656320", "+916290315431", "+918979703265",
-    "+918551058079", "+916289742275", "+918877673872", "+918357988848", "+919354003963",
-    "+918478984451", "+919653658918", "+918979035541", "+918697969426", "+919414039565",
-    "+918617436699", "+918513937114", "+917044269512", "+917449958313", "+918670869956",
-    "+919144317215", "+917984872576", "+919335133710", "+919330204120", "+918218991896",
-    "+917699709165", "+917699709161", "+918849244894", "+916294274312", "+918514003884",
-    "+919674129982", "+919144234677", "+918481858603", "+918514007134", "+917007976390",
-    "+919931788848", "+918867887132", "+919546095125", "+918335916573", "+916202545132",
-    "+918850565921", "+917033780636", "+919454304627", "+918409687843", "+916289693761",
-    "+918902164005", "+918604050209", "+919330780675", "+916203163947", "+919093349748",
-    "+919073753239", "+919834464651", "+919340112087", "+917360849405", "+919950071842",
-    "+917903785368", "+919987166461", "+917408553440", "+916289932825", "+919603663119",
-    "+916200151797", "+918343833796", "+918310211662", "+919093672697", "+919657837583",
-    "+919088163475", "+918609168861", "+918513938098", "+918830681203", "+918208769851",
-    "+916282501341", "+919798001380", "+917498383512", "+918609421406", "+916289779668",
-    "+919992923927", "+919992443651", "+919330297159", "+918345958566", "+918927297419",
-    "+917223804777", "+917837844941", "+919340852370", "+919340852365", "+919490584696",
-    "+919128648444", "+918708959318", "+917464005751", "+919014293267", "+918709948480",
-    "+919088385153", "+918269858278", "+919211344423", "+917759963120", "+919890392825",
-    "+916395686313", "+919798853892", "+918002694366", "+918689831418", "+918696065048",
-    "+918918557298", "+918515831303", "+918768812814", "+918168813388", "+916205802536",
-    "+919328446819", "+919144530689", "+917076891749", "+919776030244", "+919330363299",
-    "+916297694538", "+919159160470", "+916289887928"
+    "+917397947365": 3, "+917550098431": 2, "+919150228347": 5, "+918292577122": 1, "+919060883501": 4,
+    "+919163255112": 2, "+916002454613": 3, "+918292042103": 1, "+917091184923": 2, "+917633959085": 3,
+    "+919693115624": 1, "+918337079723": 2, "+919608381483": 3, "+918838591478": 4, "+917250968907": 1,
+    "+916200662711": 2, "+917369089716": 3, "+919088970355": 1, "+917667394441": 2, "+918807044585": 3,
+    "+917352384386": 1, "+918340444510": 2, "+919874460525": 3, "+916289657859": 4, "+916002485411": 1,
+    "+917909021203": 2, "+916002454615": 3, "+916383283037": 1, "+917449664537": 2, "+919741170745": 3,
+    "+918789709789": 1, "+916205600945": 2, "+916002545812": 3, "+916206416578": 1, "+916901837050": 2,
+    "+917044518143": 3, "+918478977217": 1, "+919123303151": 2, "+919330172957": 3, "+919268002125": 1,
+    "+919088524731": 2, "+919135410272": 3, "+917484019313": 1, "+917479066971": 2, "+919811637369": 3,
+    "+917718732612": 1, "+919399126358": 2, "+919090598938": 3, "+919088353903": 1, "+919093956065": 2,
+    "+919407302916": 3, "+917505749890": 1, "+919433656320": 2, "+916290315431": 3, "+918979703265": 1,
+    "+918551058079": 2, "+916289742275": 3, "+918877673872": 1, "+918357988848": 2, "+919354003963": 3,
+    "+918478984451": 1, "+919653658918": 2, "+918979035541": 3, "+918697969426": 1, "+919414039565": 2,
+    "+918617436699": 3, "+918513937114": 1, "+917044269512": 2, "+917449958313": 3, "+918670869956": 1,
+    "+919144317215": 2, "+917984872576": 3, "+919335133710": 1, "+919330204120": 2, "+918218991896": 3,
+    "+917699709165": 1, "+917699709161": 2, "+918849244894": 3, "+916294274312": 1, "+918514003884": 2,
+    "+919674129982": 3, "+919144234677": 1, "+918481858603": 2, "+918514007134": 3, "+917007976390": 1,
+    "+919931788848": 2, "+918867887132": 3, "+919546095125": 1, "+918335916573": 2, "+916202545132": 3,
+    "+918850565921": 1, "+917033780636": 2, "+919454304627": 3, "+918409687843": 1, "+916289693761": 2,
+    "+918902164005": 3, "+918604050209": 1, "+919330780675": 2, "+916203163947": 3, "+919093349748": 1,
+    "+919073753239": 2, "+919834464651": 3, "+919340112087": 1, "+917360849405": 2, "+919950071842": 3,
+    "+917903785368": 1, "+919987166461": 2, "+917408553440": 3, "+916289932825": 1, "+919603663119": 2,
+    "+916200151797": 3, "+918343833796": 1, "+918310211662": 2, "+919093672697": 3, "+919657837583": 1,
+    "+919088163475": 2, "+918609168861": 3, "+918513938098": 1, "+918830681203": 2, "+918208769851": 3,
+    "+916282501341": 1, "+919798001380": 2, "+917498383512": 3, "+918609421406": 1, "+916289779668": 2,
+    "+919992923927": 3, "+919992443651": 1, "+919330297159": 2, "+918345958566": 3, "+918927297419": 1,
+    "+917223804777": 2, "+917837844941": 3, "+919340852370": 1, "+919340852365": 2, "+919490584696": 3,
+    "+919128648444": 1, "+918708959318": 2, "+917464005751": 3, "+919014293267": 1, "+918709948480": 2,
+    "+919088385153": 3, "+918269858278": 1, "+919211344423": 2, "+917759963120": 3, "+919890392825": 1,
+    "+916395686313": 2, "+919798853892": 3, "+918002694366": 1, "+918689831418": 2, "+918696065048": 3,
+    "+918918557298": 1, "+918515831303": 2, "+918768812814": 3, "+918168813388": 1, "+916205802536": 2,
+    "+919328446819": 3, "+919144530689": 1, "+917076891749": 2, "+919776030244": 3, "+919330363299": 1,
+    "+916297694538": 2, "+919159160470": 3, "+916289887928": 1
 }
 
 # Add initial spam numbers to session state (avoid writing to Firestore at startup)
-st.session_state.spam_numbers.update(initial_spam_numbers)
+for phone, count in initial_spam_numbers.items():
+    if phone not in st.session_state.spam_numbers:
+        st.session_state.spam_numbers[phone] = count
 
 # Reference to spam_numbers for easier use
 spam_numbers = st.session_state.spam_numbers
@@ -350,22 +365,28 @@ elif page == "Services":
                         number_without_country = formatted_number[3:]
                     classification = "✅ Not Spam"
                     special_classification = None
+                    reported_by_users = 0
+                    is_reported_spam = False
+                    # Check if the number is in the spam database
+                    if formatted_number in spam_numbers:
+                        classification = "🚨 Spam"
+                        reported_by_users = spam_numbers[formatted_number]
+                        is_reported_spam = True
+                    # Check for prefix-based spam classification
                     if number_without_country.startswith("14"):
-                        st.session_state.spam_numbers.add(formatted_number)
+                        st.session_state.spam_numbers[formatted_number] = spam_numbers.get(formatted_number, 0)
                         classification = "🚨 Spam"
                     elif number_without_country.startswith("88265"):
-                        st.session_state.spam_numbers.add(formatted_number)
+                        st.session_state.spam_numbers[formatted_number] = spam_numbers.get(formatted_number, 0)
                         classification = "🚨 Spam"
                     elif number_without_country.startswith("796512"):
-                        st.session_state.spam_numbers.add(formatted_number)
+                        st.session_state.spam_numbers[formatted_number] = spam_numbers.get(formatted_number, 0)
                         classification = "🚨 Spam"
                     elif number_without_country.startswith("16"):
                         special_classification = "Government or Regulators"
                         classification = "ℹ️ Not Spam"
-                    if formatted_number in spam_numbers:
-                        classification = "🚨 Spam"
                     if formatted_number.startswith("+140") or formatted_number.startswith("140"):
-                        st.session_state.spam_numbers.add(formatted_number)
+                        st.session_state.spam_numbers[formatted_number] = spam_numbers.get(formatted_number, 0)
                         classification = "🚨 Spam"
                     if local_provider == "Unknown" and api_provider == "Unknown":
                         classification = "🚨 Spam"
@@ -382,6 +403,8 @@ elif page == "Services":
                     st.write(f"📞 **Line Type:** {line_type}")
                     st.write(f"🌎 **Country:** {country}")
                     st.write(f"🔍 **Classification:** {classification}")
+                    if is_reported_spam:
+                        st.write(f"⚠️ **This number has been reported by {reported_by_users} user{'s' if reported_by_users != 1 else ''}.**")
 
     # Tab 2: Check Spam Message
     with tab2:
@@ -430,9 +453,9 @@ elif page == "Services":
                 formatted_feedback, _, _, _, is_valid = parse_phone_number(spam_input)
                 if is_valid:
                     if formatted_feedback in spam_numbers:
-                        st.info("ℹ️ This number is already reported as spam.")
+                        st.info(f"ℹ️ This number is already reported as spam by {spam_numbers[formatted_feedback]} user{'s' if spam_numbers[formatted_feedback] != 1 else ''}.")
                     else:
-                        st.session_state.spam_numbers.add(formatted_feedback)
+                        st.session_state.spam_numbers[formatted_feedback] = 1
                         save_spam_number(formatted_feedback)
                         st.success("🚨 Spam number reported successfully.")
                 else:
