@@ -6,10 +6,10 @@ import joblib
 import requests
 import os
 import re
+import base64
+import time
 from phonenumbers import carrier, geocoder, timezone
-from git import Repo
-import git
-import tempfile
+from github import Github
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -30,54 +30,99 @@ if 'current_page' not in st.session_state:
 # Initialize spam numbers
 if 'spam_numbers' not in st.session_state:
     st.session_state.spam_numbers = set()
-    if os.path.exists(SPAM_FILE):
-        with open(SPAM_FILE, 'r') as f:
-            st.session_state.spam_numbers.update(line.strip() for line in f if line.strip())
 
-# Function to commit and push changes to GitHub
-def commit_and_push(file_path, commit_message):
+# Function to fetch a file from GitHub and save it locally with retry logic
+def fetch_file_from_github(file_path, branch="main", max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            g = Github(st.secrets["github"]["token"])
+            repo = g.get_repo("varunnn6/spam-detector")
+            file = repo.get_contents(file_path, ref=branch)
+            content = base64.b64decode(file.content).decode()
+            with open(file_path, 'w') as f:
+                f.write(content)
+            return content
+        except Exception as e:
+            if "404" in str(e):
+                # File doesn't exist in repo, create an empty one locally
+                with open(file_path, 'w') as f:
+                    pass
+                return ""
+            elif attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed to fetch {file_path} from GitHub: {str(e)}. Retrying...")
+                time.sleep(2)  # Wait before retrying
+            else:
+                st.error(f"Failed to fetch {file_path} from GitHub after {max_retries} attempts: {str(e)}")
+                # Create an empty file locally to avoid crashes
+                with open(file_path, 'w') as f:
+                    pass
+                return ""
+
+# Function to update a file on GitHub using PyGithub with branch specification
+def update_file_on_github(file_path, commit_message, branch="main"):
     try:
-        # Use a temporary directory to clone the repo
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Clone the repository
-            repo_url = st.secrets["github"]["repo_url"]
-            token = st.secrets["github"]["token"]
-            auth_url = repo_url.replace("https://", f"https://{token}@")
-            repo = Repo.clone_from(auth_url, temp_dir)
+        # Initialize GitHub client with the token
+        g = Github(st.secrets["github"]["token"])
+        repo = g.get_repo("varunnn6/spam-detector")
 
-            # Copy the updated file to the cloned repo
-            import shutil
-            dest_path = os.path.join(temp_dir, os.path.basename(file_path))
-            shutil.copyfile(file_path, dest_path)
+        # Read the file content
+        with open(file_path, 'r') as f:
+            content = f.read()
 
-            # Stage the file
-            repo.index.add([os.path.basename(file_path)])
+        # Encode content to base64 (GitHub API requires this)
+        content_b64 = base64.b64encode(content.encode()).decode()
 
-            # Commit changes
-            repo.index.commit(commit_message)
+        # Get the file's current SHA (if it exists)
+        try:
+            file = repo.get_contents(file_path, ref=branch)
+            sha = file.sha
+            # Update the file
+            repo.update_file(file_path, commit_message, content, sha, branch=branch)
+        except:
+            # Create the file if it doesn't exist
+            repo.create_file(file_path, commit_message, content, branch=branch)
 
-            # Push to GitHub
-            origin = repo.remote(name='origin')
-            origin.push()
-
-        st.success(f"Successfully updated {file_path} in GitHub repository.")
+        # Verify the update by fetching the file again
+        updated_file = repo.get_contents(file_path, ref=branch)
+        updated_content = base64.b64decode(updated_file.content).decode()
+        if content == updated_content:
+            st.success(f"Successfully updated {file_path} in GitHub repository on branch {branch}.")
+            return True
+        else:
+            st.error(f"Update to {file_path} succeeded, but the content does not match. Possible GitHub API issue.")
+            return False
     except Exception as e:
-        st.error(f"Failed to push to GitHub: {str(e)}")
+        if "403" in str(e):
+            st.error("GitHub authentication failed (HTTP 403 Forbidden). Please check your Personal Access Token and repository permissions.")
+        elif "404" in str(e):
+            st.error("Repository or file not found. Please verify the repository name and ensure the file exists.")
+        else:
+            st.error(f"Failed to update file on GitHub: {str(e)}")
+        return False
 
-# Load user data from file at startup
+# Load user data from GitHub at startup
 def load_userdata():
     userdata = {}
-    try:
-        with open(USERDATA_FILE, 'r') as f:
-            for line in f:
-                if line.strip():
-                    name, phone = line.strip().split(',')
-                    userdata[phone] = name
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(USERDATA_FILE, 'w') as f:
-            pass
+    content = fetch_file_from_github(USERDATA_FILE)
+    for line in content.splitlines():
+        if line.strip():
+            name, phone = line.strip().split(',')
+            userdata[phone] = name
     return userdata
+
+# Load feedback from GitHub at startup
+def load_feedback():
+    feedback = []
+    content = fetch_file_from_github(FEEDBACK_FILE)
+    feedback = [line.strip() for line in content.splitlines() if line.strip()]
+    return feedback
+
+# Load spam numbers from GitHub at startup
+def load_spam_numbers():
+    spam_numbers = set()
+    content = fetch_file_from_github(SPAM_FILE)
+    spam_numbers.update(line.strip() for line in content.splitlines() if line.strip())
+    return spam_numbers
 
 # Save user data to file and push to GitHub
 def save_userdata(userdata):
@@ -85,21 +130,13 @@ def save_userdata(userdata):
         with open(USERDATA_FILE, 'w') as f:
             for phone, name in userdata.items():
                 f.write(f"{name},{phone}\n")
-        commit_and_push(USERDATA_FILE, "Update userdata.txt with new user data")
+        if not update_file_on_github(USERDATA_FILE, "Update userdata.txt with new user data"):
+            st.warning("Data was saved locally but not synced to GitHub. It may be lost on app restart.")
+        else:
+            # Fetch the latest file to ensure local copy is up-to-date
+            fetch_file_from_github(USERDATA_FILE)
     except Exception as e:
         st.error(f"Failed to save userdata: {str(e)}")
-
-# Load feedback from file at startup
-def load_feedback():
-    feedback = []
-    try:
-        with open(FEEDBACK_FILE, 'r') as f:
-            feedback = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        # Create the file if it doesn't exist
-        with open(FEEDBACK_FILE, 'w') as f:
-            pass
-    return feedback
 
 # Save feedback to file and push to GitHub
 def save_feedback(feedback):
@@ -107,13 +144,18 @@ def save_feedback(feedback):
         with open(FEEDBACK_FILE, 'w') as f:
             for entry in feedback:
                 f.write(f"{entry}\n")
-        commit_and_push(FEEDBACK_FILE, "Update feedback.txt with new feedback")
+        if not update_file_on_github(FEEDBACK_FILE, "Update feedback.txt with new feedback"):
+            st.warning("Feedback was saved locally but not synced to GitHub. It may be lost on app restart.")
+        else:
+            # Fetch the latest file to ensure local copy is up-to-date
+            fetch_file_from_github(FEEDBACK_FILE)
     except Exception as e:
         st.error(f"Failed to save feedback: {str(e)}")
 
 # Load data into session state at startup
 st.session_state.userdata = load_userdata()
 st.session_state.feedback = load_feedback()
+st.session_state.spam_numbers = load_spam_numbers()
 
 # Load Trained Machine Learning Model and Vectorizer
 @st.cache_resource
@@ -346,8 +388,12 @@ elif page == "Services":
                 try:
                     with open(SPAM_FILE, 'a') as f:
                         f.write(f"{formatted_feedback}\n")
-                    commit_and_push(SPAM_FILE, f"Add spam number {formatted_feedback} to spam_numbers.txt")
-                    st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
+                    if update_file_on_github(SPAM_FILE, f"Add spam number {formatted_feedback} to spam_numbers.txt"):
+                        # Fetch the latest file to ensure local copy is up-to-date
+                        fetch_file_from_github(SPAM_FILE)
+                        st.success(f"Phone number {formatted_feedback} has been reported as spam and saved.")
+                    else:
+                        st.warning("Spam number was saved locally but not synced to GitHub. It may be lost on app restart.")
                 except Exception as e:
                     st.error(f"Failed to save spam number: {str(e)}")
             else:
