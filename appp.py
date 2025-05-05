@@ -438,7 +438,7 @@ elif page == "Services":
                     result = "✅ Not Spam"
                 if "Spam" in result:
                     st.error("✅ This message is classified as spam.")
-                else:
+                if:
                     st.success("ℹ️ This message is not classified as spam.")
                 st.write(f"🔍 **Classification:** {result}")
                 if spam_keyword_count > 0 and result == "🚨 Spam":
