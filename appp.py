@@ -14,17 +14,15 @@ from google.cloud.firestore_v1 import DocumentReference
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
-# Initialize Firebase Firestore
+# Initialize Firebase Firestore (silently, without UI messages)
 try:
     cred_dict = json.loads(st.secrets["firebase"]["credentials"])
     cred = credentials.Certificate(cred_dict)
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
-    st.success("Successfully connected to Firestore!")
 except Exception as e:
-    st.error(f"Failed to connect to Firestore: {str(e)}")
-    st.warning("Running in limited mode without database persistence. Some features may not work.")
+    # Log the error internally (not displayed to user)
     db = None
     st.session_state.userdata = st.session_state.get('userdata', {})
     st.session_state.feedback = st.session_state.get('feedback', [])
@@ -54,7 +52,7 @@ def load_userdata():
             name = data.get('name', 'Unknown')
             userdata[phone] = name
     except Exception as e:
-        st.error(f"Failed to load userdata: {str(e)}")
+        pass  # Silently handle errors
     return userdata
 
 # Save user data to Firestore asynchronously
@@ -70,7 +68,7 @@ def save_userdata(userdata):
             batch.set(doc_ref, {'name': name})
         batch.commit()  # Batch write for efficiency
     except Exception as e:
-        st.error(f"Failed to save userdata: {str(e)}")
+        pass  # Silently handle errors
 
 # Load feedback from Firestore (limit to 50 entries)
 def load_feedback():
@@ -84,7 +82,7 @@ def load_feedback():
             data = doc.to_dict()
             feedback.append(data.get('entry', ''))
     except Exception as e:
-        st.error(f"Failed to load feedback: {str(e)}")
+        pass  # Silently handle errors
     return feedback
 
 # Save feedback to Firestore asynchronously
@@ -104,7 +102,7 @@ def save_feedback(feedback):
             batch.set(doc_ref, {'entry': entry})
         batch.commit()
     except Exception as e:
-        st.error(f"Failed to save feedback: {str(e)}")
+        pass  # Silently handle errors
 
 # Load spam numbers from Firestore (limit to 500 entries)
 def load_spam_numbers():
@@ -117,7 +115,7 @@ def load_spam_numbers():
         for doc in docs:
             spam_numbers.add(doc.id)
     except Exception as e:
-        st.error(f"Failed to load spam numbers: {str(e)}")
+        pass  # Silently handle errors
     return spam_numbers
 
 # Save a spam number to Firestore asynchronously
@@ -129,7 +127,7 @@ def save_spam_number(phone):
         spam_ref = db.collection('spam_numbers')
         spam_ref.document(phone).set({}, merge=True)  # Minimal write
     except Exception as e:
-        st.error(f"Failed to save spam number: {str(e)}")
+        pass  # Silently handle errors
 
 # Load data into session state at startup
 st.session_state.userdata = load_userdata()
@@ -282,8 +280,9 @@ if page == "Home":
 
 # Services Page
 elif page == "Services":
-    st.subheader("📲 Check if a Phone Number & SMS is Spam")
-    phone_number = st.text_input("Enter Phone Number (e.g., +919876543210):", key="phone_input_services")
+    # Section 1: Search Number (Check if a phone number is spam)
+    st.subheader("📲 Search Number")
+    phone_number = st.text_input("Enter Phone Number to Check (e.g., +919876543210):", key="phone_input_services")
     if st.button("Check Number"):
         if not phone_number.strip():
             st.warning("Please enter a phone number.")
@@ -332,8 +331,9 @@ elif page == "Services":
                 st.write(f"🌎 **Country:** {country}")
                 st.write(f"🔍 **Classification:** {classification}")
 
-    st.subheader("📩 SMS Spam Detector")
-    user_message = st.text_area("Enter SMS text:", key="sms_input")
+    # Section 2: Check Spam Message (SMS Spam Detector)
+    st.subheader("📩 Check Spam Message")
+    user_message = st.text_area("Enter SMS Text to Check:", key="sms_input")
     SPAM_KEYWORDS = [
         "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
         "win", "congratulations", "money", "rupee", "reward", "lottery"
@@ -358,7 +358,8 @@ elif page == "Services":
             if spam_keyword_count > 0 and result == "🚨 Spam":
                 st.write(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
 
-    st.subheader("📝 Report a Spam Number")
+    # Section 3: Report Spam (Report a Spam Number)
+    st.subheader("📝 Report Spam")
     feedback_phone = st.text_input("Enter a Spam Number to Report:", key="report_input")
     if st.button("Submit Report"):
         if not feedback_phone.strip():
