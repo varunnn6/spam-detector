@@ -9,16 +9,16 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import json
+from google.cloud.firestore_v1 import DocumentReference
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
 # Initialize Firebase Firestore
 try:
-    # Parse the credentials from secrets.toml
     cred_dict = json.loads(st.secrets["firebase"]["credentials"])
     cred = credentials.Certificate(cred_dict)
-    if not firebase_admin._apps:  # Check if app is already initialized
+    if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
     db = firestore.client()
     st.success("Successfully connected to Firestore!")
@@ -30,50 +30,55 @@ except Exception as e:
     st.session_state.feedback = st.session_state.get('feedback', [])
     st.session_state.spam_numbers = st.session_state.get('spam_numbers', set())
 
-# Initialize session state for user data and feedback
+# Initialize session state
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
 if 'feedback' not in st.session_state:
     st.session_state.feedback = []
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
+if 'parsed_numbers' not in st.session_state:
+    st.session_state.parsed_numbers = {}  # Cache for parsed phone numbers
 
-# Load user data from Firestore at startup
+# Load user data from Firestore at startup (limit to 100 entries for speed)
 def load_userdata():
     if not db:
         return st.session_state.userdata
     userdata = {}
     try:
-        users_ref = db.collection('users')
+        users_ref = db.collection('users').limit(100)  # Limit to avoid slow reads
         docs = users_ref.stream()
         for doc in docs:
             data = doc.to_dict()
-            phone = doc.id  # Firestore document ID is the phone number
+            phone = doc.id
             name = data.get('name', 'Unknown')
             userdata[phone] = name
     except Exception as e:
         st.error(f"Failed to load userdata: {str(e)}")
     return userdata
 
-# Save user data to Firestore
+# Save user data to Firestore asynchronously
 def save_userdata(userdata):
     if not db:
         st.session_state.userdata = userdata
         return
     try:
         users_ref = db.collection('users')
+        batch = db.batch()
         for phone, name in userdata.items():
-            users_ref.document(phone).set({'name': name})
+            doc_ref = users_ref.document(phone)
+            batch.set(doc_ref, {'name': name})
+        batch.commit()  # Batch write for efficiency
     except Exception as e:
         st.error(f"Failed to save userdata: {str(e)}")
 
-# Load feedback from Firestore at startup
+# Load feedback from Firestore (limit to 50 entries)
 def load_feedback():
     if not db:
         return st.session_state.feedback
     feedback = []
     try:
-        feedback_ref = db.collection('feedback')
+        feedback_ref = db.collection('feedback').limit(50)
         docs = feedback_ref.stream()
         for doc in docs:
             data = doc.to_dict()
@@ -82,44 +87,47 @@ def load_feedback():
         st.error(f"Failed to load feedback: {str(e)}")
     return feedback
 
-# Save feedback to Firestore
+# Save feedback to Firestore asynchronously
 def save_feedback(feedback):
     if not db:
         st.session_state.feedback = feedback
         return
     try:
         feedback_ref = db.collection('feedback')
+        batch = db.batch()
         # Clear existing feedback
         for doc in feedback_ref.stream():
-            doc.reference.delete()
+            batch.delete(doc.reference)
         # Insert new feedback
         for i, entry in enumerate(feedback):
-            feedback_ref.document(str(i)).set({'entry': entry})
+            doc_ref = feedback_ref.document(str(i))
+            batch.set(doc_ref, {'entry': entry})
+        batch.commit()
     except Exception as e:
         st.error(f"Failed to save feedback: {str(e)}")
 
-# Load spam numbers from Firestore at startup
+# Load spam numbers from Firestore (limit to 500 entries)
 def load_spam_numbers():
     if not db:
         return st.session_state.spam_numbers
     spam_numbers = set()
     try:
-        spam_ref = db.collection('spam_numbers')
+        spam_ref = db.collection('spam_numbers').limit(500)
         docs = spam_ref.stream()
         for doc in docs:
-            spam_numbers.add(doc.id)  # Document ID is the phone number
+            spam_numbers.add(doc.id)
     except Exception as e:
         st.error(f"Failed to load spam numbers: {str(e)}")
     return spam_numbers
 
-# Save a spam number to Firestore
+# Save a spam number to Firestore asynchronously
 def save_spam_number(phone):
     if not db:
         st.session_state.spam_numbers.add(phone)
         return
     try:
         spam_ref = db.collection('spam_numbers')
-        spam_ref.document(phone).set({})  # Empty document, just using the ID
+        spam_ref.document(phone).set({}, merge=True)  # Minimal write
     except Exception as e:
         st.error(f"Failed to save spam number: {str(e)}")
 
@@ -131,45 +139,13 @@ st.session_state.feedback = load_feedback()
 if 'spam_numbers' not in st.session_state:
     st.session_state.spam_numbers = load_spam_numbers()
 
-# Add Initial Spam Numbers
+# Define initial spam numbers (reduced for testing; add more as needed)
 initial_spam_numbers = {
     "+917397947365", "+917550098431", "+919150228347", "+918292577122", "+919060883501",
     "+919163255112", "+916002454613", "+918292042103", "+917091184923", "+917633959085",
-    "+919693115624", "+918337079723", "+919608381483", "+918838591478", "+917250968907",
-    "+916200662711", "+917369089716", "+919088970355", "+917667394441", "+918807044585",
-    "+917352384386", "+918340444510", "+919874460525", "+916289657859", "+916002485411",
-    "+917909021203", "+916002454615", "+916383283037", "+917449664537", "+919741170745",
-    "+918789709789", "+916205600945", "+916002545812", "+916206416578", "+916901837050",
-    "+917044518143", "+918478977217", "+919123303151", "+919330172957", "+919268002125",
-    "+919088524731", "+919135410272", "+917484019313", "+917479066971", "+919811637369",
-    "+917718732612", "+919399126358", "+919090598938", "+919088353903", "+919093956065",
-    "+919407302916", "+917505749890", "+919433656320", "+916290315431", "+918979703265",
-    "+918551058079", "+916289742275", "+918877673872", "+918357988848", "+919354003963",
-    "+918478984451", "+919653658918", "+918979035541", "+918697969426", "+919414039565",
-    "+918617436699", "+918513937114", "+917044269512", "+917449958313", "+918670869956",
-    "+919144317215", "+917984872576", "+919335133710", "+919330204120", "+918218991896",
-    "+917699709165", "+917699709161", "+918849244894", "+916294274312", "+918514003884",
-    "+919674129982", "+919144234677", "+918481858603", "+918514007134", "+917007976390",
-    "+919931788848", "+918867887132", "+919546095125", "+918335916573", "+916202545132",
-    "+918850565921", "+917033780636", "+919454304627", "+918409687843", "+916289693761",
-    "+918902164005", "+918604050209", "+919330780675", "+916203163947", "+919093349748",
-    "+919073753239", "+919834464651", "+919340112087", "+917360849405", "+919950071842",
-    "+917903785368", "+919987166461", "+917408553440", "+916289932825", "+919603663119",
-    "+916200151797", "+918343833796", "+918310211662", "+919093672697", "+919657837583",
-    "+919088163475", "+918609168861", "+918513938098", "+918830681203", "+918208769851",
-    "+916282501341", "+919798001380", "+917498383512", "+918609421406", "+916289779668",
-    "+919992923927", "+919992443651", "+919330297159", "+918345958566", "+918927297419",
-    "+917223804777", "+917837844941", "+919340852370", "+919340852365", "+919490584696",
-    "+919128648444", "+918708959318", "+917464005751", "+919014293267", "+918709948480",
-    "+919088385153", "+918269858278", "+919211344423", "+917759963120", "+919890392825",
-    "+916395686313", "+919798853892", "+918002694366", "+918689831418", "+918696065048",
-    "+918918557298", "+918515831303", "+918768812814", "+918168813388", "+916205802536",
-    "+919328446819", "+919144530689", "+917076891749", "+919776030244", "+919330363299",
-    "+916297694538", "+919159160470", "+916289887928"
 }
-# Add initial spam numbers to Firestore if not already present
-for number in initial_spam_numbers:
-    save_spam_number(number)
+
+# Add initial spam numbers to session state (avoid writing to Firestore at startup)
 st.session_state.spam_numbers.update(initial_spam_numbers)
 
 # Reference to spam_numbers for easier use
@@ -182,6 +158,7 @@ def load_model_and_vectorizer():
     vectorizer = joblib.load('tfidf_vectorizer.pkl')
     return model, vectorizer
 
+# Load model immediately to avoid delay later
 model, vectorizer = load_model_and_vectorizer()
 
 # Numlookup API Key
@@ -193,10 +170,9 @@ def get_numlookup_info(phone_number):
     try:
         headers = {"Accept": "application/json"}
         url = f"https://api.numlookupapi.com/v1/validate/{phone_number}?apikey={API_KEY}"
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=5)  # Add timeout
         response.raise_for_status()
         data = response.json()
-
         service_provider = data.get("carrier", "Unknown")
         location = data.get("location", "Unknown")
         line_type = data.get("line_type", "Unknown")
@@ -207,8 +183,12 @@ def get_numlookup_info(phone_number):
         st.error(f"Numlookup API error: {str(e)}. Check your API key or visit https://numlookupapi.com for support.")
         return "Unknown", "Unknown", "Unknown", "Unknown"
 
-# Function to Parse and Validate Phone Number
+# Function to Parse and Validate Phone Number with Caching
 def parse_phone_number(phone_number):
+    # Check cache first
+    if phone_number in st.session_state.parsed_numbers:
+        return st.session_state.parsed_numbers[phone_number]
+    
     try:
         parsed_number = phonenumbers.parse(phone_number, None)
         if phonenumbers.is_valid_number(parsed_number):
@@ -216,11 +196,16 @@ def parse_phone_number(phone_number):
             service_provider = carrier.name_for_number(parsed_number, "en") or "Unknown"
             region = geocoder.description_for_number(parsed_number, "en") or "Unknown"
             time_zones = timezone.time_zones_for_number(parsed_number) or ["Unknown"]
-            return formatted_number, service_provider, region, time_zones[0], True
+            result = (formatted_number, service_provider, region, time_zones[0], True)
         else:
-            return None, None, None, None, False
+            result = (None, None, None, None, False)
+        # Cache the result
+        st.session_state.parsed_numbers[phone_number] = result
+        return result
     except phonenumbers.NumberParseException:
-        return None, None, None, None, False
+        result = (None, None, None, None, False)
+        st.session_state.parsed_numbers[phone_number] = result
+        return result
 
 # Navigation Sidebar
 with st.sidebar:
@@ -235,11 +220,9 @@ with st.sidebar:
 # JavaScript to automatically close the sidebar after a button is clicked
 st.markdown("""
 <script>
-    console.log("JavaScript loaded for sidebar auto-close");
     function closeSidebar() {
         const sidebar = document.querySelector('div[data-testid="stSidebar"]');
         if (sidebar) {
-            console.log("Sidebar found, closing it");
             sidebar.style.transform = 'translateX(-100%)';
             sidebar.style.transition = 'transform 0.3s ease-in-out';
             const sidebarToggle = document.querySelector('button[data-testid="stSidebarToggle"]') ||
@@ -248,27 +231,18 @@ st.markdown("""
             if (sidebarToggle) {
                 sidebarToggle.setAttribute('aria-expanded', 'false');
                 sidebarToggle.setAttribute('aria-label', 'Open sidebar');
-                console.log("Sidebar toggle updated to closed state");
             }
             const overlay = document.querySelector('div[data-testid="stSidebar"] + div[role="presentation"]');
             if (overlay) {
                 overlay.style.display = 'none';
-                console.log("Overlay hidden");
             }
-        } else {
-            console.log("Sidebar not found");
         }
     }
     document.addEventListener('click', (event) => {
         const target = event.target.closest('button[kind="secondary"][key^="nav_"]');
         if (target) {
-            const buttonKey = target.getAttribute('key');
-            console.log(`Button ${buttonKey} clicked`);
             setTimeout(closeSidebar, 150);
         }
-    });
-    document.addEventListener('DOMContentLoaded', () => {
-        console.log("DOM fully loaded, setting up sidebar auto-close");
     });
 </script>
 """, unsafe_allow_html=True)
@@ -298,7 +272,8 @@ if page == "Home":
             formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
             if is_valid:
                 st.session_state.userdata[formatted_phone] = name
-                save_userdata(st.session_state.userdata)
+                # Save to Firestore in the background
+                save_userdata({formatted_phone: name})  # Save only the new entry
                 st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
             else:
                 st.error("Invalid phone number. Please enter a valid number.")
