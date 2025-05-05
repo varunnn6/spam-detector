@@ -4,4 +4,4 @@ streamlit
 phonenumbers
 joblib
 requests
-psycopg2-binary
+firebase-admin
