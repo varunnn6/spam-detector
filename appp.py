@@ -139,19 +139,23 @@ def save_spam_number(phone):
             st.session_state.spam_numbers[phone] += 1
         else:
             st.session_state.spam_numbers[phone] = 1
-        return
+        return st.session_state.spam_numbers[phone]
     try:
         spam_ref = db.collection('spam_numbers').document(phone)
         doc = spam_ref.get()
         if doc.exists:
             # Increment the report count
             current_count = doc.to_dict().get('report_count', 1)
-            spam_ref.update({'report_count': current_count + 1})
+            new_count = current_count + 1
+            spam_ref.update({'report_count': new_count})
+            return new_count
         else:
             # First report
             spam_ref.set({'report_count': 1})
+            return 1
     except Exception as e:
         pass  # Silently handle errors
+    return 1  # Fallback in case of error
 
 # Load data into session state at startup
 st.session_state.userdata = load_userdata()
@@ -453,11 +457,13 @@ elif page == "Services":
                 formatted_feedback, _, _, _, is_valid = parse_phone_number(spam_input)
                 if is_valid:
                     if formatted_feedback in spam_numbers:
-                        st.info(f"ℹ️ This number has been reported {spam_numbers[formatted_feedback]} times.")
+                        updated_count = save_spam_number(formatted_feedback)
+                        st.session_state.spam_numbers[formatted_feedback] = updated_count
+                        st.info(f"ℹ️ This number has been reported {updated_count} times.")
                     else:
-                        st.session_state.spam_numbers[formatted_feedback] = 1
-                        save_spam_number(formatted_feedback)
-                        st.success("🚨 Spam number reported successfully.")
+                        updated_count = save_spam_number(formatted_feedback)
+                        st.session_state.spam_numbers[formatted_feedback] = updated_count
+                        st.success("🚨 The number has been successfully reported.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
 
