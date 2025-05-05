@@ -3,4 +3,6 @@ pandas
 scikit-learn
 joblib
 phonenumbers
-
+numpy
+requests
+gitpython
