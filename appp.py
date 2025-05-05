@@ -365,12 +365,12 @@ elif page == "Services":
                         number_without_country = formatted_number[3:]
                     classification = "✅ Not Spam"
                     special_classification = None
-                    reported_by_users = 0
+                    report_count = 0
                     is_reported_spam = False
                     # Check if the number is in the spam database
                     if formatted_number in spam_numbers:
                         classification = "🚨 Spam"
-                        reported_by_users = spam_numbers[formatted_number]
+                        report_count = spam_numbers[formatted_number]
                         is_reported_spam = True
                     # Check for prefix-based spam classification
                     if number_without_country.startswith("14"):
@@ -404,7 +404,7 @@ elif page == "Services":
                     st.write(f"🌎 **Country:** {country}")
                     st.write(f"🔍 **Classification:** {classification}")
                     if is_reported_spam:
-                        st.write(f"⚠️ **This number has been reported by {reported_by_users} user{'s' if reported_by_users != 1 else ''}.**")
+                        st.write(f"⚠️ **This number has been reported {report_count} times.**")
 
     # Tab 2: Check Spam Message
     with tab2:
@@ -453,7 +453,7 @@ elif page == "Services":
                 formatted_feedback, _, _, _, is_valid = parse_phone_number(spam_input)
                 if is_valid:
                     if formatted_feedback in spam_numbers:
-                        st.info(f"ℹ️ This number is already reported as spam by {spam_numbers[formatted_feedback]} user{'s' if spam_numbers[formatted_feedback] != 1 else ''}.")
+                        st.info(f"ℹ️ This number has been reported {spam_numbers[formatted_feedback]} times.")
                     else:
                         st.session_state.spam_numbers[formatted_feedback] = 1
                         save_spam_number(formatted_feedback)
