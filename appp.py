@@ -221,7 +221,7 @@ def load_model_and_vectorizer():
 model, vectorizer = load_model_and_vectorizer()
 
 # Numlookup API Key
-API_KEY = "num_live_gAgRGbG0st9WUyf8sR98KqlcKb5qB0SkrZFEpIm6"
+API_KEY = "num_live_1DP975acU1UFuYM0qR8oKUWFMDZxq6cz7fx8Qs8P" 
 
 # Function to Get Number Info using Numlookup API
 @st.cache_data
