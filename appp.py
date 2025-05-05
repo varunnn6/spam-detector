@@ -1,3 +1,5 @@
+in this code in check spam msg  if its spam show out put msg in red and if it is not spam than show msg in green
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -430,20 +432,19 @@ elif page == "Services":
                 spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
                 user_message_vectorized = vectorizer.transform([user_message])
                 prediction = model.predict(user_message_vectorized)[0]
-                if is_trusted and spam_keyword_count <= 1:
+               if is_trusted and spam_keyword_count <= 1:
                     result = "✅ Not Spam"
                 elif spam_keyword_count >= 2 or prediction == 1:
                     result = "🚨 Spam"
                 else:
                     result = "✅ Not Spam"
-                # Display the classification result directly
                 if "Spam" in result:
-                    st.error(f"🚨 Spam Detected: This message is classified as spam.")
+                    st.error("✅ This message is classified as spam.")
                 else:
-                    st.success(f"✅ Safe: This message is not classified as spam.")
-                # Additional note for spam classification
-                if spam_keyword_count > 0 and "Spam" in result:
-                    st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keywords detected.")
+                    st.success("ℹ️ This message is not classified as spam.")
+                st.write(f"🔍 **Classification:** {result}")
+                if spam_keyword_count > 0 and result == "🚨 Spam":
+                    st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
 
     # Tab 3: Report Spam
     with tab3:
@@ -460,7 +461,7 @@ elif page == "Services":
                     if formatted_feedback in spam_numbers:
                         updated_count = save_spam_number(formatted_feedback)
                         st.session_state.spam_numbers[formatted_feedback] = updated_count
-                        st.success(f"🚨 The number has been successfully reported")
+                        st.success(f"🚨 The number is successfully reported")
                         st.info(f"It has been reported {updated_count} times by the people.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
