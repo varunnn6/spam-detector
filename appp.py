@@ -14,6 +14,17 @@ from google.cloud.firestore_v1 import DocumentReference
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
+# Custom CSS to prevent header wrapping
+st.markdown("""
+<style>
+    .no-wrap-header h2 {
+        white-space: nowrap !important;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize Firebase Firestore (silently, without UI messages)
 try:
     cred_dict = json.loads(st.secrets["firebase"]["credentials"])
@@ -343,7 +354,9 @@ elif page == "Services":
 
     # Tab 2: Check Spam Message
     with tab2:
+        st.markdown('<div class="no-wrap-header">', unsafe_allow_html=True)
         st.header("Check Spam Messages 💬")
+        st.markdown('</div>', unsafe_allow_html=True)
         user_message = st.text_area("Enter message text to check:", key="sms_input", height=100)
         SPAM_KEYWORDS = [
             "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
@@ -375,7 +388,9 @@ elif page == "Services":
 
     # Tab 3: Report Spam
     with tab3:
+        st.markdown('<div class="no-wrap-header">', unsafe_allow_html=True)
         st.header("Report a Spam Number ⚠️")
+        st.markdown('</div>', unsafe_allow_html=True)
         spam_input = st.text_input("Enter phone number to report as spam:", key="report_input")
         if st.button("Report Spam", key="report_spam_button"):
             if not spam_input.strip():
@@ -395,7 +410,7 @@ elif page == "Services":
 # Feedback Page
 elif page == "Feedback":
     st.subheader("📝 Submit Feedback")
-    feedback_text = st.text_area("Please provide your feedback:", key="feedback_input")
+    feedback_text = st.text_area("Please provide your feedback 😇:", key="feedback_input")
     if st.button("Submit Feedback"):
         if feedback_text.strip():
             st.session_state.feedback.append(feedback_text)
