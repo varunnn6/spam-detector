@@ -364,7 +364,7 @@ elif page == "Services":
 
     with tab1:
         st.header("Search a Number 🔍")
-        phone_input = st.text_input("Enter phone number to check (e.g., +919876543210):", key="phone_input_services")
+        phone_input = st.text_input("Enter phone number to check (e.g., +91 1234567890):", key="phone_input_services")
         if st.button("Search", key="search_button"):
             if not phone_input.strip():
                 st.warning("Please enter a phone number.")
