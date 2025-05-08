@@ -25,19 +25,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize Firebase Firestore (silently, without UI messages)
+# Initialize Firebase Firestore
 try:
-    cred_dict = json.loads(st.secrets["firebase"]["credentials"])
-    cred = credentials.Certificate(cred_dict)
     if not firebase_admin._apps:
+        cred_dict = json.loads(st.secrets["firebase"]["credentials"])
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    # Log the error internally (not displayed to user)
     db = None
     st.session_state.userdata = st.session_state.get('userdata', {})
     st.session_state.feedback = st.session_state.get('feedback', [])
     st.session_state.spam_numbers = st.session_state.get('spam_numbers', {})
+    st.error(f"Failed to connect to Firestore: {str(e)}. Using local session state. Check your Firebase credentials in Streamlit Cloud secrets.")
 
 # Initialize session state
 if 'userdata' not in st.session_state:
@@ -55,7 +55,7 @@ def load_userdata():
         return st.session_state.userdata
     userdata = {}
     try:
-        users_ref = db.collection('users').limit(100)  # Limit to avoid slow reads
+        users_ref = db.collection('users').limit(100)
         docs = users_ref.stream()
         for doc in docs:
             data = doc.to_dict()
@@ -63,7 +63,7 @@ def load_userdata():
             name = data.get('name', 'Unknown')
             userdata[phone] = name
     except Exception as e:
-        pass  # Silently handle errors
+        st.error(f"Error loading user data: {str(e)}")
     return userdata
 
 # Save user data to Firestore asynchronously
@@ -77,9 +77,9 @@ def save_userdata(userdata):
         for phone, name in userdata.items():
             doc_ref = users_ref.document(phone)
             batch.set(doc_ref, {'name': name})
-        batch.commit()  # Batch write for efficiency
+        batch.commit()
     except Exception as e:
-        pass  # Silently handle errors
+        st.error(f"Error saving user data: {str(e)}")
 
 # Load feedback from Firestore (limit to 50 entries)
 def load_feedback():
@@ -93,7 +93,7 @@ def load_feedback():
             data = doc.to_dict()
             feedback.append(data.get('entry', ''))
     except Exception as e:
-        pass  # Silently handle errors
+        st.error(f"Error loading feedback: {str(e)}")
     return feedback
 
 # Save feedback to Firestore asynchronously
@@ -104,16 +104,14 @@ def save_feedback(feedback):
     try:
         feedback_ref = db.collection('feedback')
         batch = db.batch()
-        # Clear existing feedback
         for doc in feedback_ref.stream():
             batch.delete(doc.reference)
-        # Insert new feedback
         for i, entry in enumerate(feedback):
             doc_ref = feedback_ref.document(str(i))
             batch.set(doc_ref, {'entry': entry})
         batch.commit()
     except Exception as e:
-        pass  # Silently handle errors
+        st.error(f"Error saving feedback: {str(e)}")
 
 # Load spam numbers from Firestore (limit to 500 entries)
 def load_spam_numbers():
@@ -126,13 +124,18 @@ def load_spam_numbers():
         for doc in docs:
             data = doc.to_dict()
             phone = doc.id
-            report_count = data.get('report_count', 1)  # Default to 1 if not set
+            report_count = data.get('report_count', 1)
             spam_numbers[phone] = report_count
     except Exception as e:
-        pass  # Silently handle errors
+        st.error(f"Error loading spam numbers: {str(e)}")
     return spam_numbers
 
-# Save a spam number to Firestore asynchronously with report count
+# Save a spam number to Firestore with transaction for atomicity
+# Ensure Firestore security rules allow writes to 'spam_numbers', e.g.:
+# match /spam_numbers/{document=**} {
+#   allow read: if true;
+#   allow write: if true; // Or 'if request.auth != null' with authentication
+# }
 def save_spam_number(phone):
     if not db:
         if phone in st.session_state.spam_numbers:
@@ -140,22 +143,32 @@ def save_spam_number(phone):
         else:
             st.session_state.spam_numbers[phone] = 1
         return st.session_state.spam_numbers[phone]
+    
     try:
         spam_ref = db.collection('spam_numbers').document(phone)
+        @firestore.transactional
+        def update_spam_count(transaction):
+            snapshot = spam_ref.get(transaction=transaction)
+            if snapshot.exists:
+                current_count = snapshot.to_dict().get('report_count', 1)
+                new_count = current_count + 1
+                transaction.update(spam_ref, {'report_count': new_count})
+            else:
+                new_count = 1
+                transaction.set(spam_ref, {'report_count': new_count})
+            return new_count
+        
+        transaction = db.transaction()
+        new_count = update_spam_count(transaction)
+        # Verify the write succeeded
         doc = spam_ref.get()
-        if doc.exists:
-            # Increment the report count
-            current_count = doc.to_dict().get('report_count', 1)
-            new_count = current_count + 1
-            spam_ref.update({'report_count': new_count})
+        if doc.exists and doc.to_dict().get('report_count') == new_count:
             return new_count
         else:
-            # First report
-            spam_ref.set({'report_count': 1})
-            return 1
+            raise ValueError("Firestore write verification failed")
     except Exception as e:
-        pass  # Silently handle errors
-    return 1  # Fallback in case of error
+        st.error(f"Failed to report number to Firestore: {str(e)}. Ensure Firestore security rules allow writes to 'spam_numbers' and credentials are valid.")
+        return st.session_state.spam_numbers.get(phone, 0)  # Return current count without increment
 
 # Load data into session state at startup
 st.session_state.userdata = load_userdata()
@@ -218,10 +231,14 @@ def load_model_and_vectorizer():
     return model, vectorizer
 
 # Load model immediately to avoid delay later
-model, vectorizer = load_model_and_vectorizer()
+try:
+    model, vectorizer = load_model_and_vectorizer()
+except FileNotFoundError:
+    st.error("Machine learning model or vectorizer files not found. Please ensure 'spam_classifier.pkl' and 'tfidf_vectorizer.pkl' are in the project directory.")
+    model, vectorizer = None, None
 
 # Numlookup API Key
-API_KEY = "num_live_1DP975acU1UFuYM0qR8oKUWFMDZxq6cz7fx8Qs8P" 
+API_KEY = "num_live_1DP975acU1UFuYM0qR8oKUWFMDZxq6cz7fx8Qs8P"
 
 # Function to Get Number Info using Numlookup API
 @st.cache_data
@@ -229,7 +246,7 @@ def get_numlookup_info(phone_number):
     try:
         headers = {"Accept": "application/json"}
         url = f"https://api.numlookupapi.com/v1/validate/{phone_number}?apikey={API_KEY}"
-        response = requests.get(url, headers=headers, timeout=5)  # Add timeout
+        response = requests.get(url, headers=headers, timeout=5)
         response.raise_for_status()
         data = response.json()
         service_provider = data.get("carrier", "Unknown")
@@ -244,7 +261,6 @@ def get_numlookup_info(phone_number):
 
 # Function to Parse and Validate Phone Number with Caching
 def parse_phone_number(phone_number):
-    # Check cache first
     if phone_number in st.session_state.parsed_numbers:
         return st.session_state.parsed_numbers[phone_number]
     
@@ -258,7 +274,6 @@ def parse_phone_number(phone_number):
             result = (formatted_number, service_provider, region, time_zones[0], True)
         else:
             result = (None, None, None, None, False)
-        # Cache the result
         st.session_state.parsed_numbers[phone_number] = result
         return result
     except phonenumbers.NumberParseException:
@@ -313,21 +328,19 @@ page = st.session_state.current_page
 if page == "Home":
     tab1, tab2 = st.tabs(["Introduction", "Verify Your Number"])
 
-    # Tab 1: Introduction
     with tab1:
         st.header("Welcome to Spam Shield ⚔️")
         st.write("""
             **Spam Shield** is your go-to platform for protecting yourself from spam calls and messages. With a single web app, you can:
 
             ✅: Verify your phone number to build trust with others.  
-            🔎: Check Phone Number information .  
+            🔎: Check Phone Number information.  
             ❓: Check if phone number and message is spam.  
             🚩: Report spam numbers to help keep the community safe.  
 
             Join us in making communication safer and more reliable 🫂☺️!
         """)
 
-    # Tab 2: Verify Number
     with tab2:
         st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
@@ -338,8 +351,7 @@ if page == "Home":
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
                 if is_valid:
                     st.session_state.userdata[formatted_phone] = name
-                    # Save to Firestore in the background
-                    save_userdata({formatted_phone: name})  # Save only the new entry
+                    save_userdata({formatted_phone: name})
                     st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
@@ -350,7 +362,6 @@ if page == "Home":
 elif page == "Services":
     tab1, tab2, tab3 = st.tabs(["🔍 Search Number", "💬 Check Spam Message", "🚨 Report Spam"])
 
-    # Tab 1: Search Number
     with tab1:
         st.header("Search a Number 🔍")
         phone_input = st.text_input("Enter phone number to check (e.g., +919876543210):", key="phone_input_services")
@@ -371,12 +382,10 @@ elif page == "Services":
                     special_classification = None
                     report_count = 0
                     is_reported_spam = False
-                    # Check if the number is in the spam database
                     if formatted_number in spam_numbers:
                         classification = "🚨 Spam"
                         report_count = spam_numbers[formatted_number]
                         is_reported_spam = True
-                    # Check for prefix-based spam classification
                     if number_without_country.startswith("14"):
                         st.session_state.spam_numbers[formatted_number] = spam_numbers.get(formatted_number, 0)
                         classification = "🚨 Spam"
@@ -410,7 +419,6 @@ elif page == "Services":
                     if is_reported_spam:
                         st.write(f"⚠️ **This number has been reported {report_count} times.**")
 
-    # Tab 2: Check Spam Message
     with tab2:
         st.markdown('<div class="no-wrap-header">', unsafe_allow_html=True)
         st.header("Check Spam Messages 💬")
@@ -428,23 +436,25 @@ elif page == "Services":
                 message_lower = user_message.lower()
                 is_trusted = any(source in user_message for source in TRUSTED_SOURCES)
                 spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
-                user_message_vectorized = vectorizer.transform([user_message])
-                prediction = model.predict(user_message_vectorized)[0]
-                if is_trusted and spam_keyword_count <= 1:
-                    result = "✅ Not Spam"
-                elif spam_keyword_count >= 2 or prediction == 1:
-                    result = "🚨 Spam"
+                if model and vectorizer:
+                    user_message_vectorized = vectorizer.transform([user_message])
+                    prediction = model.predict(user_message_vectorized)[0]
+                    if is_trusted and spam_keyword_count <= 1:
+                        result = "✅ Not Spam"
+                    elif spam_keyword_count >= 2 or prediction == 1:
+                        result = "🚨 Spam"
+                    else:
+                        result = "✅ Not Spam"
+                    if "🚨 Spam" in result:
+                        st.error("This message is a spam.")
+                    if "✅" in result:
+                        st.success("This message is not a spam.")
+                    st.write(f"🔍 **Classification:** {result}")
+                    if spam_keyword_count > 0 and result == "🚨 Spam":
+                        st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
                 else:
-                    result = "✅ Not Spam"
-                if "🚨 Spam" in result:
-                    st.error("✅ This message is a spam.")
-                if "✅" in result:
-                    st.success("This message is not a spam.")
-                st.write(f"🔍 **Classification:** {result}")
-                if spam_keyword_count > 0 and result == "🚨 Spam":
-                    st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
+                    st.error("Machine learning model not loaded. Cannot classify message.")
 
-    # Tab 3: Report Spam
     with tab3:
         st.markdown('<div class="no-wrap-header">', unsafe_allow_html=True)
         st.header("Report a Spam Number ⚠️")
@@ -456,11 +466,14 @@ elif page == "Services":
             else:
                 formatted_feedback, _, _, _, is_valid = parse_phone_number(spam_input)
                 if is_valid:
-                    if formatted_feedback in spam_numbers:
-                        updated_count = save_spam_number(formatted_feedback)
+                    previous_count = st.session_state.spam_numbers.get(formatted_feedback, 0)
+                    updated_count = save_spam_number(formatted_feedback)
+                    if updated_count > previous_count:
                         st.session_state.spam_numbers[formatted_feedback] = updated_count
-                        st.success(f"🚨 The number is successfully reported")
+                        st.success("🚨 The number is successfully reported")
                         st.info(f"It has been reported {updated_count} times by the people.")
+                    else:
+                        st.error("Failed to report number. Check Firestore connection and security rules.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
 
