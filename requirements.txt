@@ -6,3 +6,4 @@ joblib
 requests
 firebase-admin
 scikit-learn
+google-cloud-firestore
