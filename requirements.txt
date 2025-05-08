@@ -7,3 +7,5 @@ requests
 firebase-admin
 scikit-learn
 google-cloud-firestore
+selenium
+webdriver-manager
