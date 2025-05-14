@@ -10,8 +10,8 @@ from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import json
 from google.cloud.firestore_v1 import DocumentReference
-from twilio.rest import Client
-from twilio.base.exceptions import TwilioRestException
+import random
+import time
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -41,15 +41,6 @@ except Exception as e:
     st.session_state.spam_numbers = st.session_state.get('spam_numbers', {})
     st.error(f"Failed to connect to Firestore: {str(e)}. Using local session state. Check your Firebase credentials in Streamlit Cloud secrets.")
 
-# Initialize Twilio Client
-try:
-    twilio_client = Client(st.secrets["twilio"]["account_sid"], st.secrets["twilio"]["auth_token"])
-    verify_service_sid = st.secrets["twilio"]["verify_sid"]
-except Exception as e:
-    twilio_client = None
-    verify_service_sid = None
-    st.error(f"Failed to initialize Twilio client: {str(e)}. Check Twilio credentials in Streamlit secrets.")
-
 # Initialize session state
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
@@ -64,7 +55,8 @@ if 'otp_verification' not in st.session_state:
         'phone': None,
         'name': None,
         'awaiting_otp': False,
-        'otp_sent': False
+        'otp_sent': False,
+        'otp': None
     }
 
 # Load user data from Firestore at startup (limit to 100 entries for speed)
@@ -294,41 +286,48 @@ def parse_phone_number(phone_number):
         st.session_state.parsed_numbers[phone_number] = result
         return result
 
-# Function to Send OTP
-def send_otp(phone_number):
-    if not twilio_client or not verify_service_sid:
-        st.error("Twilio service is not configured properly.")
-        return False
-    try:
-        verification = twilio_client.verify.v2.services(verify_service_sid) \
-            .verifications \
-            .create(to=phone_number, channel='sms')
-        if verification.status in ['pending', 'approved']:
-            return True
-        else:
-            st.error("Failed to send OTP. Please try again.")
-            return False
-    except TwilioRestException as e:
-        st.error(f"Twilio error: {str(e)}. Check phone number or Twilio configuration.")
-        return False
-
-# Function to Verify OTP
-def verify_otp(phone_number, otp_code):
-    if not twilio_client or not verify_service_sid:
-        st.error("Twilio service is not configured properly.")
-        return False
-    try:
-        verification_check = twilio_client.verify.v2.services(verify_service_sid) \
-            .verification_checks \
-            .create(to=phone_number, code=otp_code)
-        if verification_check.status == 'approved':
-            return True
-        else:
-            st.error("Invalid OTP. Please try again.")
-            return False
-    except TwilioRestException as e:
-        st.error(f"Twilio error: {str(e)}. Check OTP or Twilio configuration.")
-        return False
+# Function to Send OTP via Fast2SMS with Retry Logic
+def send_otp_fast2sms(phone_number):
+    retries = 3
+    for attempt in range(retries):
+        try:
+            api_key = st.secrets["fast2sms"]["api_key"]
+            sender_id = st.secrets["fast2sms"]["sender_id"]
+            # Generate a 6-digit OTP
+            otp = str(random.randint(100000, 999999))
+            message = f"Your OTP for verification is: {otp}"
+            # Remove the country code (+91) for Fast2SMS API
+            number = phone_number[3:] if phone_number.startswith("+91") else phone_number
+            url = "https://www.fast2sms.com/dev/bulkV2"
+            payload = {
+                "sender_id": sender_id,
+                "message": message,
+                "language": "english",
+                "route": "p",  # Promotional route (cheaper, suitable for OTPs)
+                "numbers": number
+            }
+            headers = {
+                "authorization": api_key,
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            response = requests.post(url, data=payload, headers=headers, timeout=10)
+            result = response.json()
+            if result.get("return", False):
+                return otp, True
+            else:
+                st.error(f"Fast2SMS error: {result.get('message', 'Unknown error')}")
+                if attempt < retries - 1:
+                    time.sleep(2)  # Wait 2 seconds before retrying
+                    continue
+                return None, False
+        except Exception as e:
+            st.error(f"Fast2SMS error: {str(e)}")
+            if attempt < retries - 1:
+                time.sleep(2)
+                continue
+            return None, False
+    st.error("Failed to send OTP after multiple attempts.")
+    return None, False
 
 # Navigation Sidebar
 with st.sidebar:
@@ -401,14 +400,19 @@ if page == "Home":
                 if name and phone:
                     formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
                     if is_valid:
-                        if send_otp(formatted_phone):
-                            st.session_state.otp_verification['phone'] = formatted_phone
-                            st.session_state.otp_verification['name'] = name
-                            st.session_state.otp_verification['awaiting_otp'] = True
-                            st.session_state.otp_verification['otp_sent'] = True
-                            st.success(f"OTP sent to {formatted_phone}. Please check your phone.")
+                        if not formatted_phone.startswith("+91"):
+                            st.error("Spam Shield only supports Indian numbers (+91) for verification at present. Please enter a valid Indian phone number.")
                         else:
-                            st.error("Failed to send OTP. Please try again.")
+                            otp, success = send_otp_fast2sms(formatted_phone)
+                            if success:
+                                st.session_state.otp_verification['phone'] = formatted_phone
+                                st.session_state.otp_verification['name'] = name
+                                st.session_state.otp_verification['awaiting_otp'] = True
+                                st.session_state.otp_verification['otp_sent'] = True
+                                st.session_state.otp_verification['otp'] = otp
+                                st.success(f"OTP sent to {formatted_phone}. Please check your phone.")
+                            else:
+                                st.error("Failed to send OTP. Please try again.")
                     else:
                         st.error("Invalid phone number. Please enter a valid number.")
                 else:
@@ -420,19 +424,18 @@ if page == "Home":
             with col1:
                 if st.button("Verify OTP"):
                     if otp_code:
-                        if verify_otp(st.session_state.otp_verification['phone'], otp_code):
-                            # Save to database only after OTP verification
+                        if otp_code == st.session_state.otp_verification['otp']:
                             formatted_phone = st.session_state.otp_verification['phone']
                             name = st.session_state.otp_verification['name']
                             st.session_state.userdata[formatted_phone] = name
                             save_userdata({formatted_phone: name})
                             st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
-                            # Reset OTP state
                             st.session_state.otp_verification = {
                                 'phone': None,
                                 'name': None,
                                 'awaiting_otp': False,
-                                'otp_sent': False
+                                'otp_sent': False,
+                                'otp': None
                             }
                         else:
                             st.error("Invalid OTP. Please try again.")
@@ -440,7 +443,9 @@ if page == "Home":
                         st.warning("Please enter the OTP.")
             with col2:
                 if st.button("Resend OTP"):
-                    if send_otp(st.session_state.otp_verification['phone']):
+                    otp, success = send_otp_fast2sms(st.session_state.otp_verification['phone'])
+                    if success:
+                        st.session_state.otp_verification['otp'] = otp
                         st.success("OTP resent. Please check your phone.")
                     else:
                         st.error("Failed to resend OTP. Please try again.")
