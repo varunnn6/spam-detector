@@ -10,6 +10,8 @@ from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import json
 from google.cloud.firestore_v1 import DocumentReference
+from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -39,6 +41,15 @@ except Exception as e:
     st.session_state.spam_numbers = st.session_state.get('spam_numbers', {})
     st.error(f"Failed to connect to Firestore: {str(e)}. Using local session state. Check your Firebase credentials in Streamlit Cloud secrets.")
 
+# Initialize Twilio Client
+try:
+    twilio_client = Client(st.secrets["twilio"]["account_sid"], st.secrets["twilio"]["auth_token"])
+    verify_service_sid = st.secrets["twilio"]["verify_sid"]
+except Exception as e:
+    twilio_client = None
+    verify_service_sid = None
+    st.error(f"Failed to initialize Twilio client: {str(e)}. Check Twilio credentials in Streamlit secrets.")
+
 # Initialize session state
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
@@ -48,6 +59,13 @@ if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 if 'parsed_numbers' not in st.session_state:
     st.session_state.parsed_numbers = {}  # Cache for parsed phone numbers
+if 'otp_verification' not in st.session_state:
+    st.session_state.otp_verification = {
+        'phone': None,
+        'name': None,
+        'awaiting_otp': False,
+        'otp_sent': False
+    }
 
 # Load user data from Firestore at startup (limit to 100 entries for speed)
 def load_userdata():
@@ -131,11 +149,6 @@ def load_spam_numbers():
     return spam_numbers
 
 # Save a spam number to Firestore with transaction for atomicity
-# Ensure Firestore security rules allow writes to 'spam_numbers', e.g.:
-# match /spam_numbers/{document=**} {
-#   allow read: if true;
-#   allow write: if true; // Or 'if request.auth != null' with authentication
-# }
 def save_spam_number(phone):
     if not db:
         if phone in st.session_state.spam_numbers:
@@ -281,6 +294,42 @@ def parse_phone_number(phone_number):
         st.session_state.parsed_numbers[phone_number] = result
         return result
 
+# Function to Send OTP
+def send_otp(phone_number):
+    if not twilio_client or not verify_service_sid:
+        st.error("Twilio service is not configured properly.")
+        return False
+    try:
+        verification = twilio_client.verify.v2.services(verify_service_sid) \
+            .verifications \
+            .create(to=phone_number, channel='sms')
+        if verification.status in ['pending', 'approved']:
+            return True
+        else:
+            st.error("Failed to send OTP. Please try again.")
+            return False
+    except TwilioRestException as e:
+        st.error(f"Twilio error: {str(e)}. Check phone number or Twilio configuration.")
+        return False
+
+# Function to Verify OTP
+def verify_otp(phone_number, otp_code):
+    if not twilio_client or not verify_service_sid:
+        st.error("Twilio service is not configured properly.")
+        return False
+    try:
+        verification_check = twilio_client.verify.v2.services(verify_service_sid) \
+            .verification_checks \
+            .create(to=phone_number, code=otp_code)
+        if verification_check.status == 'approved':
+            return True
+        else:
+            st.error("Invalid OTP. Please try again.")
+            return False
+    except TwilioRestException as e:
+        st.error(f"Twilio error: {str(e)}. Check OTP or Twilio configuration.")
+        return False
+
 # Navigation Sidebar
 with st.sidebar:
     st.header("Navigation")
@@ -344,19 +393,57 @@ if page == "Home":
     with tab2:
         st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
-        name = st.text_input("Your Name", key="name_input")
-        phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
-        if st.button("Submit Verification"):
-            if name and phone:
-                formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
-                if is_valid:
-                    st.session_state.userdata[formatted_phone] = name
-                    save_userdata({formatted_phone: name})
-                    st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+        
+        if not st.session_state.otp_verification['awaiting_otp']:
+            name = st.text_input("Your Name", key="name_input")
+            phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
+            if st.button("Send OTP"):
+                if name and phone:
+                    formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
+                    if is_valid:
+                        if send_otp(formatted_phone):
+                            st.session_state.otp_verification['phone'] = formatted_phone
+                            st.session_state.otp_verification['name'] = name
+                            st.session_state.otp_verification['awaiting_otp'] = True
+                            st.session_state.otp_verification['otp_sent'] = True
+                            st.success(f"OTP sent to {formatted_phone}. Please check your phone.")
+                        else:
+                            st.error("Failed to send OTP. Please try again.")
+                    else:
+                        st.error("Invalid phone number. Please enter a valid number.")
                 else:
-                    st.error("Invalid phone number. Please enter a valid number.")
-            else:
-                st.warning("Please enter both name and phone number.")
+                    st.warning("Please enter both name and phone number.")
+        else:
+            st.write(f"OTP sent to {st.session_state.otp_verification['phone']}")
+            otp_code = st.text_input("Enter OTP", key="otp_input")
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("Verify OTP"):
+                    if otp_code:
+                        if verify_otp(st.session_state.otp_verification['phone'], otp_code):
+                            # Save to database only after OTP verification
+                            formatted_phone = st.session_state.otp_verification['phone']
+                            name = st.session_state.otp_verification['name']
+                            st.session_state.userdata[formatted_phone] = name
+                            save_userdata({formatted_phone: name})
+                            st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+                            # Reset OTP state
+                            st.session_state.otp_verification = {
+                                'phone': None,
+                                'name': None,
+                                'awaiting_otp': False,
+                                'otp_sent': False
+                            }
+                        else:
+                            st.error("Invalid OTP. Please try again.")
+                    else:
+                        st.warning("Please enter the OTP.")
+            with col2:
+                if st.button("Resend OTP"):
+                    if send_otp(st.session_state.otp_verification['phone']):
+                        st.success("OTP resent. Please check your phone.")
+                    else:
+                        st.error("Failed to resend OTP. Please try again.")
 
 # Services Page with Tabs
 elif page == "Services":
