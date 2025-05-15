@@ -426,7 +426,7 @@ elif page == "Services":
         user_message = st.text_area("Enter message text to check:", key="sms_input", height=100)
         SPAM_KEYWORDS = [
             "won", "click", "link", "prize", "free", "claim", "urgent", "offer",
-            "win", "congratulations", "money", "rupee", "reward", "lottery"
+            "win", "congratulations", "money", "rupee", "reward", "lottery","click"
         ]
         TRUSTED_SOURCES = ["-SBI", "-HDFC", "-ICICI"]
         if st.button("Check Spam", key="check_spam_button"):
