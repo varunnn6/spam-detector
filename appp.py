@@ -9,7 +9,6 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import json
-from google.cloud.firestore_v1 import DocumentReference
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -437,21 +436,33 @@ elif page == "Services":
                 is_trusted = any(source in user_message for source in TRUSTED_SOURCES)
                 spam_keyword_count = sum(1 for keyword in SPAM_KEYWORDS if keyword in message_lower)
                 if model and vectorizer:
+                    # Step 1: Use the machine learning model to classify the message
                     user_message_vectorized = vectorizer.transform([user_message])
                     prediction = model.predict(user_message_vectorized)[0]
+                    if prediction == 1:
+                        result = "🚨 Spam"
+                        reason = "Classified as spam by the machine learning model."
+                    else:
+                        # Step 2: If the model says "Not Spam", check for suspicious keywords
+                        if spam_keyword_count >= 2:
+                            result = "🚨 Spam"
+                            reason = f"Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected."
+                        else:
+                            result = "✅ Not Spam"
+                            reason = "Classified as not spam by the machine learning model and keyword check."
+
+                    # Step 3: Override for trusted sources (unless heavily suspicious)
                     if is_trusted and spam_keyword_count <= 1:
                         result = "✅ Not Spam"
-                    elif spam_keyword_count >= 2 or prediction == 1:
-                        result = "🚨 Spam"
-                    else:
-                        result = "✅ Not Spam"
+                        reason = "Classified as not spam because it’s from a trusted source with minimal suspicious keywords."
+
+                    # Display the result
                     if "🚨 Spam" in result:
                         st.error("This message is a spam.")
                     if "✅" in result:
                         st.success("This message is not a spam.")
                     st.write(f"🔍 **Classification:** {result}")
-                    if spam_keyword_count > 0 and result == "🚨 Spam":
-                        st.warning(f"⚠️ *Note:* Classified as spam due to {spam_keyword_count} suspicious keyword(s) detected.")
+                    st.write(f"ℹ️ **Reason:** {reason}")
                 else:
                     st.error("Machine learning model not loaded. Cannot classify message.")
 
