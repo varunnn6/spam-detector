@@ -10,6 +10,7 @@ from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import random
 import time
+import json  # Added for parsing JSON string
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -28,7 +29,9 @@ st.markdown("""
 # Initialize Firebase Firestore
 try:
     if not firebase_admin._apps:
-        cred_dict = st.secrets["firebase"]["credentials"]
+        # Parse the JSON string from secrets into a dictionary
+        cred_json = st.secrets["firebase"]["credentials"]
+        cred_dict = json.loads(cred_json)
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
