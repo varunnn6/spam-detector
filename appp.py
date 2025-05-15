@@ -8,9 +8,8 @@ import re
 import firebase_admin
 from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
-import random
-import time
 import json
+from google.cloud.firestore_v1 import DocumentReference
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -29,8 +28,7 @@ st.markdown("""
 # Initialize Firebase Firestore
 try:
     if not firebase_admin._apps:
-        cred_json = st.secrets["firebase"]["credentials"]
-        cred_dict = json.loads(cred_json)
+        cred_dict = json.loads(st.secrets["firebase"]["credentials"])
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
@@ -50,14 +48,6 @@ if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 if 'parsed_numbers' not in st.session_state:
     st.session_state.parsed_numbers = {}  # Cache for parsed phone numbers
-if 'otp_verification' not in st.session_state:
-    st.session_state.otp_verification = {
-        'phone': None,
-        'name': None,
-        'awaiting_otp': False,
-        'otp_sent': False,
-        'otp': None
-    }
 
 # Load user data from Firestore at startup (limit to 100 entries for speed)
 def load_userdata():
@@ -141,6 +131,11 @@ def load_spam_numbers():
     return spam_numbers
 
 # Save a spam number to Firestore with transaction for atomicity
+# Ensure Firestore security rules allow writes to 'spam_numbers', e.g.:
+# match /spam_numbers/{document=**} {
+#   allow read: if true;
+#   allow write: if true; // Or 'if request.auth != null' with authentication
+# }
 def save_spam_number(phone):
     if not db:
         if phone in st.session_state.spam_numbers:
@@ -286,70 +281,6 @@ def parse_phone_number(phone_number):
         st.session_state.parsed_numbers[phone_number] = result
         return result
 
-# Function to Send OTP via Fast2SMS with Retry Logic and Debugging
-def send_otp_fast2sms(phone_number):
-    retries = 3
-    for attempt in range(retries):
-        try:
-            api_key = st.secrets["fast2sms"]["api_key"]
-            sender_id = st.secrets["fast2sms"]["sender_id"]
-            # Generate a 6-digit OTP
-            otp = str(random.randint(100000, 999999))
-            # Use the Template ID instead of the raw message
-            template_id = "12345"  # Replace with your actual Fast2SMS Template ID
-            # Remove the country code (+91) for Fast2SMS API
-            number = phone_number[3:] if phone_number.startswith("+91") else phone_number
-            url = "https://www.fast2sms.com/dev/bulkV2"
-            payload = {
-                "sender_id": sender_id,
-                "message": template_id,  # Use the Template ID here
-                "language": "english",
-                "route": "qt",  # Transactional route
-                "numbers": number,
-                "variables": f"{{{{otp}}}}|{otp}"  # Map the placeholder to the OTP value
-            }
-            headers = {
-                "authorization": api_key,
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            # Make the API request
-            response = requests.post(url, data=payload, headers=headers, timeout=10)
-            # Log the raw response for debugging
-            st.write(f"Debug: Fast2SMS raw response (status code: {response.status_code}): {response.text}")
-            # Check if the response is empty
-            if not response.text:
-                st.error("Fast2SMS returned an empty response. Please check your API key, credits, or network connection.")
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None, False
-            # Try to parse JSON
-            try:
-                result = response.json()
-                if result.get("return", False):
-                    return otp, True
-                else:
-                    st.error(f"Fast2SMS error: {result.get('message', 'Unknown error')}")
-                    if attempt < retries - 1:
-                        time.sleep(2)
-                        continue
-                    return None, False
-            except ValueError as e:
-                st.error(f"Failed to parse Fast2SMS response as JSON: {str(e)}")
-                st.write(f"Raw response: {response.text}")
-                if attempt < retries - 1:
-                    time.sleep(2)
-                    continue
-                return None, False
-        except requests.exceptions.RequestException as e:
-            st.error(f"Network error while contacting Fast2SMS: {str(e)}")
-            if attempt < retries - 1:
-                time.sleep(2)
-                continue
-            return None, False
-    st.error("Failed to send OTP after multiple attempts.")
-    return None, False
-
 # Navigation Sidebar
 with st.sidebar:
     st.header("Navigation")
@@ -413,64 +344,19 @@ if page == "Home":
     with tab2:
         st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
-        st.info("Note: If you don't receive the OTP, your number might be on the DND (Do Not Disturb) registry. You can check your DND status by texting 'STATUS' to 1909 or visiting https://www.nccptrai.gov.in.")
-        
-        if not st.session_state.otp_verification['awaiting_otp']:
-            name = st.text_input("Your Name", key="name_input")
-            phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
-            if st.button("Send OTP"):
-                if name and phone:
-                    formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
-                    if is_valid:
-                        if not formatted_phone.startswith("+91"):
-                            st.error("Spam Shield only supports Indian numbers (+91) for verification at present. Please enter a valid Indian phone number.")
-                        else:
-                            otp, success = send_otp_fast2sms(formatted_phone)
-                            if success:
-                                st.session_state.otp_verification['phone'] = formatted_phone
-                                st.session_state.otp_verification['name'] = name
-                                st.session_state.otp_verification['awaiting_otp'] = True
-                                st.session_state.otp_verification['otp_sent'] = True
-                                st.session_state.otp_verification['otp'] = otp
-                                st.success(f"OTP sent to {formatted_phone}. Please check your phone.")
-                            else:
-                                st.error("Failed to send OTP. Please try again.")
-                    else:
-                        st.error("Invalid phone number. Please enter a valid number.")
+        name = st.text_input("Your Name", key="name_input")
+        phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
+        if st.button("Submit Verification"):
+            if name and phone:
+                formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
+                if is_valid:
+                    st.session_state.userdata[formatted_phone] = name
+                    save_userdata({formatted_phone: name})
+                    st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
                 else:
-                    st.warning("Please enter both name and phone number.")
-        else:
-            st.write(f"OTP sent to {st.session_state.otp_verification['phone']}")
-            otp_code = st.text_input("Enter OTP", key="otp_input")
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("Verify OTP"):
-                    if otp_code:
-                        if otp_code == st.session_state.otp_verification['otp']:
-                            formatted_phone = st.session_state.otp_verification['phone']
-                            name = st.session_state.otp_verification['name']
-                            st.session_state.userdata[formatted_phone] = name
-                            save_userdata({formatted_phone: name})
-                            st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
-                            st.session_state.otp_verification = {
-                                'phone': None,
-                                'name': None,
-                                'awaiting_otp': False,
-                                'otp_sent': False,
-                                'otp': None
-                            }
-                        else:
-                            st.error("Invalid OTP. Please try again.")
-                    else:
-                        st.warning("Please enter the OTP.")
-            with col2:
-                if st.button("Resend OTP"):
-                    otp, success = send_otp_fast2sms(st.session_state.otp_verification['phone'])
-                    if success:
-                        st.session_state.otp_verification['otp'] = otp
-                        st.success("OTP resent. Please check your phone.")
-                    else:
-                        st.error("Failed to resend OTP. Please try again.")
+                    st.error("Invalid phone number. Please enter a valid number.")
+            else:
+                st.warning("Please enter both name and phone number.")
 
 # Services Page with Tabs
 elif page == "Services":
