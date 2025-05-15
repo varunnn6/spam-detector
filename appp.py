@@ -8,8 +8,6 @@ import re
 import firebase_admin
 from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
-import json
-from google.cloud.firestore_v1 import DocumentReference
 import random
 import time
 
@@ -30,7 +28,7 @@ st.markdown("""
 # Initialize Firebase Firestore
 try:
     if not firebase_admin._apps:
-        cred_dict = json.loads(st.secrets["firebase"]["credentials"])
+        cred_dict = st.secrets["firebase"]["credentials"]
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
@@ -286,7 +284,7 @@ def parse_phone_number(phone_number):
         st.session_state.parsed_numbers[phone_number] = result
         return result
 
-# Function to Send OTP via Fast2SMS with Retry Logic
+# Function to Send OTP via Fast2SMS with Retry Logic and Debugging
 def send_otp_fast2sms(phone_number):
     retries = 3
     for attempt in range(retries):
@@ -303,25 +301,44 @@ def send_otp_fast2sms(phone_number):
                 "sender_id": sender_id,
                 "message": message,
                 "language": "english",
-                "route": "p",  # Promotional route (cheaper, suitable for OTPs)
+                "route": "qt",  # Transactional route
                 "numbers": number
             }
             headers = {
                 "authorization": api_key,
                 "Content-Type": "application/x-www-form-urlencoded"
             }
+            # Make the API request
             response = requests.post(url, data=payload, headers=headers, timeout=10)
-            result = response.json()
-            if result.get("return", False):
-                return otp, True
-            else:
-                st.error(f"Fast2SMS error: {result.get('message', 'Unknown error')}")
+            # Log the raw response for debugging
+            st.write(f"Debug: Fast2SMS raw response (status code: {response.status_code}): {response.text}")
+            # Check if the response is empty
+            if not response.text:
+                st.error("Fast2SMS returned an empty response. Please check your API key, credits, or network connection.")
                 if attempt < retries - 1:
-                    time.sleep(2)  # Wait 2 seconds before retrying
+                    time.sleep(2)
                     continue
                 return None, False
-        except Exception as e:
-            st.error(f"Fast2SMS error: {str(e)}")
+            # Try to parse JSON
+            try:
+                result = response.json()
+                if result.get("return", False):
+                    return otp, True
+                else:
+                    st.error(f"Fast2SMS error: {result.get('message', 'Unknown error')}")
+                    if attempt < retries - 1:
+                        time.sleep(2)
+                        continue
+                    return None, False
+            except ValueError as e:
+                st.error(f"Failed to parse Fast2SMS response as JSON: {str(e)}")
+                st.write(f"Raw response: {response.text}")
+                if attempt < retries - 1:
+                    time.sleep(2)
+                    continue
+                return None, False
+        except requests.exceptions.RequestException as e:
+            st.error(f"Network error while contacting Fast2SMS: {str(e)}")
             if attempt < retries - 1:
                 time.sleep(2)
                 continue
@@ -392,6 +409,7 @@ if page == "Home":
     with tab2:
         st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
+        st.info("Note: If you don't receive the OTP, your number might be on the DND (Do Not Disturb) registry. You can check your DND status by texting 'STATUS' to 1909 or visiting https://www.nccptrai.gov.in.")
         
         if not st.session_state.otp_verification['awaiting_otp']:
             name = st.text_input("Your Name", key="name_input")
