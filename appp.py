@@ -10,7 +10,7 @@ from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
 import random
 import time
-import json  # Added for parsing JSON string
+import json
 
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
@@ -29,7 +29,6 @@ st.markdown("""
 # Initialize Firebase Firestore
 try:
     if not firebase_admin._apps:
-        # Parse the JSON string from secrets into a dictionary
         cred_json = st.secrets["firebase"]["credentials"]
         cred_dict = json.loads(cred_json)
         cred = credentials.Certificate(cred_dict)
@@ -296,16 +295,18 @@ def send_otp_fast2sms(phone_number):
             sender_id = st.secrets["fast2sms"]["sender_id"]
             # Generate a 6-digit OTP
             otp = str(random.randint(100000, 999999))
-            message = f"Your OTP for verification is: {otp}"
+            # Use the Template ID instead of the raw message
+            template_id = "12345"  # Replace with your actual Fast2SMS Template ID
             # Remove the country code (+91) for Fast2SMS API
             number = phone_number[3:] if phone_number.startswith("+91") else phone_number
             url = "https://www.fast2sms.com/dev/bulkV2"
             payload = {
                 "sender_id": sender_id,
-                "message": message,
+                "message": template_id,  # Use the Template ID here
                 "language": "english",
                 "route": "qt",  # Transactional route
-                "numbers": number
+                "numbers": number,
+                "variables": f"{{{{otp}}}}|{otp}"  # Map the placeholder to the OTP value
             }
             headers = {
                 "authorization": api_key,
