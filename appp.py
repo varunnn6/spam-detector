@@ -5,6 +5,7 @@ import phonenumbers
 import joblib
 import requests
 import re
+import random
 import firebase_admin
 from firebase_admin import credentials, firestore
 from phonenumbers import carrier, geocoder, timezone
@@ -15,28 +16,35 @@ from google.cloud.firestore_v1 import DocumentReference
 FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
 import time as _otp_time  # local name to avoid shadowing
 
-def send_otp_via_fast2sms(phone_number, otp):
+import requests
+import random
+
+FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
+
+def send_otp(phone_number):
+    otp = str(random.randint(100000, 999999))  # Generate 6-digit OTP
+
+    url = f"https://www.fast2sms.com/dev/bulkV2"
+    params = {
+        "authorization": FAST2SMS_API_KEY,
+        "variables_values": otp,
+        "route": "otp",
+        "numbers": phone_number
+    }
+
     try:
-        FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
-        url = (
-            f"https://www.fast2sms.com/dev/bulkV2?"
-            f"authorization={FAST2SMS_API_KEY}&"
-            f"variables_values={otp}&"
-            f"route=otp&"
-            f"numbers={phone_number}"
-        )
+        response = requests.get(url, params=params)
+        data = response.json()
+        print("DEBUG RESPONSE:", data)
 
-        response = requests.get(url)
-        print("DEBUG RESPONSE:", response.status_code, response.text)
-
-        if response.status_code == 200 and "Message sent successfully" in response.text:
-            return True
+        if data.get("return") == True:
+            return otp
         else:
-            return False
-
+            print("OTP sending failed:", data)
+            return None
     except Exception as e:
         print("Error sending OTP:", e)
-        return False
+        return None
 
 # ---------- END FAST2SMS SECTION ----------
 
@@ -376,7 +384,7 @@ if page == "Home":
         st.subheader("Verify Your Number ✅")
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
         name = st.text_input("Your Name", key="name_input")
-        phone = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX)", key="phone_input_home")
+        phone = st.text_input("Your Phone Number (e.g., 91XXXXXXXXXX)", key="phone_input_home")
         if st.button("Submit Verification"):
             if name and phone:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
