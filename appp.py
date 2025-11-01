@@ -16,28 +16,28 @@ FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48
 import time as _otp_time  # local name to avoid shadowing
 
 def send_otp_via_fast2sms(phone_number, otp):
-    """
-    Send OTP via Fast2SMS using correct OTP route.
-    Returns True on success, False otherwise.
-    """
     try:
-        url = "https://www.fast2sms.com/dev/bulkV2"
-        params = {
-            "authorization": FAST2SMS_API_KEY,
-            "route": "otp",
-            "variables_values": otp,
-            "numbers": phone_number.replace("+91", "")
-        }
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code == 200:
-            print("Fast2SMS OTP sent successfully:", response.text)
+        FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
+        url = (
+            f"https://www.fast2sms.com/dev/bulkV2?"
+            f"authorization={FAST2SMS_API_KEY}&"
+            f"variables_values={otp}&"
+            f"route=otp&"
+            f"numbers={phone_number}"
+        )
+
+        response = requests.get(url)
+        print("DEBUG RESPONSE:", response.status_code, response.text)
+
+        if response.status_code == 200 and "Message sent successfully" in response.text:
             return True
         else:
-            print("Fast2SMS OTP send failed:", response.text)
             return False
+
     except Exception as e:
-        print("Fast2SMS error:", e)
+        print("Error sending OTP:", e)
         return False
+
 # ---------- END FAST2SMS SECTION ----------
 
 
