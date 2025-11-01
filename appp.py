@@ -12,6 +12,48 @@ from phonenumbers import carrier, geocoder, timezone
 import json
 from google.cloud.firestore_v1 import DocumentReference
 
+# ---------- FAST2SMS OTP VERIFICATION (FIXED) ----------
+import time as _otp_time
+import random as _random
+
+FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
+
+def _normalize_number_for_fast2sms(phone):
+    if not phone:
+        return phone
+    cleaned = re.sub(r"[\s+\-()]", "", phone)
+    # remove leading + if present
+    if cleaned.startswith("+"):
+        cleaned = cleaned.lstrip("+")
+    # If starts with 0 remove leading zeros
+    cleaned = cleaned.lstrip("0")
+    # If starts with 91 and length >=12 keep as is (91XXXXXXXXXX)
+    if cleaned.startswith("91") and len(cleaned) >= 12:
+        return cleaned
+    if len(cleaned) == 10:
+        return cleaned
+    return cleaned
+
+def send_otp_via_fast2sms(phone_number, otp):
+    try:
+        norm = _normalize_number_for_fast2sms(phone_number)
+        url = (
+            f"https://www.fast2sms.com/dev/bulkV2?authorization={FAST2SMS_API_KEY}"
+            f"&variables_values={otp}&route=otp&numbers={norm}"
+        )
+        response = requests.get(url, timeout=10)
+        print("FAST2SMS DEBUG:", response.status_code, response.text)
+        try:
+            data = response.json()
+            return data.get("return", False)
+        except Exception:
+            return response.status_code == 200
+    except Exception as e:
+        print("Fast2SMS exception:", e)
+        return False
+# ---------- END FAST2SMS SECTION ----------
+
+
 # ---------- FAST2SMS OTP VERIFICATION (FIXED VERSION) ----------
 
 
@@ -382,12 +424,11 @@ if page == "Home":
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
         name = st.text_input("Your Name", key="name_input")
         phone = st.text_input("Your Phone Number (e.g., 91XXXXXXXXXX)", key="phone_input_home")
-        if st.button("Submit Verification"):
+                if st.button("Submit Verification"):
             if name and phone:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
                 if is_valid:
-                    import random
-                    otp = str(random.randint(100000, 999999))
+                    otp = str(_random.randint(100000, 999999))
                     sent = send_otp_via_fast2sms(formatted_phone, otp)
                     if sent:
                         st.session_state.generated_otp = otp
@@ -395,29 +436,36 @@ if page == "Home":
                         st.session_state.otp_sent_time = _otp_time.time()
                         st.success(f"OTP sent to {formatted_phone}. It will expire in 2 minutes.")
                     else:
-                        st.error("Failed to send OTP. Check Fast2SMS API key and credits.")
+                        st.error("Failed to send OTP. Check Fast2SMS API key, account balance, or Fast2SMS dashboard.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
             else:
                 st.warning("Please enter both name and phone number.")
 
-        # OTP input & verification (shown after OTP is sent)
+        # Show OTP input after send
         if st.session_state.get('otp_sent', False):
             entered_otp = st.text_input("Enter OTP", type="password", key="otp_input")
             if st.button("Verify OTP"):
-                # Check expiry (2 minutes = 120 seconds)
                 sent_time = st.session_state.get('otp_sent_time', 0)
                 if _otp_time.time() - sent_time > 120:
                     st.error("OTP expired after 2 minutes. Please request a new OTP.")
                     st.session_state.otp_sent = False
                     st.session_state.generated_otp = None
+                    st.session_state.otp_sent_time = None
                 else:
                     if 'generated_otp' in st.session_state and entered_otp == st.session_state.generated_otp:
+                        # Save verified user to Firestore collection 'verified_users'
                         formatted_phone, _, _, _, _ = parse_phone_number(phone)
-                        st.session_state.userdata[formatted_phone] = name
-                        save_userdata({formatted_phone: name})
-                        st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
-                        # clear OTP state
+                        try:
+                            if db:
+                                db.collection('verified_users').document(formatted_phone).set({'name': name, 'verified_at': firestore.SERVER_TIMESTAMP})
+                            st.session_state.userdata[formatted_phone] = name
+                            save_userdata({formatted_phone: name})
+                            st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified and saved.")
+                        except Exception as e:
+                            st.error(f"Verified but failed to save to Firestore: {e}. Saved locally instead.")
+                            st.session_state.userdata[formatted_phone] = name
+                        # Clear OTP state
                         st.session_state.otp_sent = False
                         st.session_state.generated_otp = None
                         st.session_state.otp_sent_time = None
