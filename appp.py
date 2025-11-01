@@ -320,7 +320,8 @@ def _normalize_number_for_api(phone):
 
 def send_otp_via_fast2sms(phone_number, otp):
     """
-    Send OTP using Fast2SMS OTP route with proper authorization header.
+    Send OTP using Fast2SMS OTP route with GET request (as per Fast2SMS docs).
+    Authorization and all parameters passed as query parameters in URL.
     Returns True on success; False otherwise.
     """
     try:
@@ -329,26 +330,21 @@ def send_otp_via_fast2sms(phone_number, otp):
             print("ERROR: Phone number normalization failed")
             return False
         
-        # Fast2SMS OTP API endpoint
-        url = "https://www.fast2sms.com/dev/bulkV2"
-        
-        # Headers with authorization
-        headers = {
-            "authorization": FAST2SMS_API_KEY,
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-        
-        # Payload data
-        payload = {
-            "variables_values": otp,
-            "route": "otp",
-            "numbers": norm
-        }
+        # Build URL with all parameters as query string (as per Fast2SMS documentation)
+        url = (
+            f"https://www.fast2sms.com/dev/bulkV2?"
+            f"authorization={FAST2SMS_API_KEY}&"
+            f"route=otp&"
+            f"variables_values={otp}&"
+            f"flash=0&"
+            f"numbers={norm}"
+        )
         
         print(f"DEBUG: Sending OTP {otp} to {norm}")
+        print(f"DEBUG: Full URL: {url[:80]}...")  # Print first 80 chars for security
         
-        # Send POST request (Fast2SMS prefers POST for OTP)
-        resp = requests.post(url, headers=headers, data=payload, timeout=12)
+        # Send GET request (as per Fast2SMS OTP documentation)
+        resp = requests.get(url, timeout=12)
         
         print(f"FAST2SMS Response Code: {resp.status_code}")
         print(f"FAST2SMS Response: {resp.text}")
@@ -360,9 +356,12 @@ def send_otp_via_fast2sms(phone_number, otp):
             if not success:
                 error_msg = j.get("message", "Unknown error")
                 print(f"FAST2SMS Error: {error_msg}")
+            else:
+                print(f"✅ OTP sent successfully to {norm}")
             return success
         except Exception as e:
             print(f"JSON parse error: {e}")
+            # If can't parse JSON but got 200, consider it success
             return resp.status_code == 200
             
     except requests.exceptions.Timeout:
