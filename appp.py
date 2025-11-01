@@ -13,11 +13,8 @@ import json
 from google.cloud.firestore_v1 import DocumentReference
 
 # ---------- FAST2SMS OTP VERIFICATION (FIXED VERSION) ----------
-FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
-import time as _otp_time  # local name to avoid shadowing
 
-import requests
-import random
+
 
 FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
 
