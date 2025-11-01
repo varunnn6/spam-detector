@@ -11,34 +11,35 @@ from phonenumbers import carrier, geocoder, timezone
 import json
 from google.cloud.firestore_v1 import DocumentReference
 
-# ---------- FAST2SMS OTP VERIFICATION (INSERTED) ----------
+# ---------- FAST2SMS OTP VERIFICATION (FIXED VERSION) ----------
 FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
 import time as _otp_time  # local name to avoid shadowing
 
 def send_otp_via_fast2sms(phone_number, otp):
     """
-    Send OTP via Fast2SMS. Returns True on (likely) success, False otherwise.
+    Send OTP via Fast2SMS using correct OTP route.
+    Returns True on success, False otherwise.
     """
     try:
         url = "https://www.fast2sms.com/dev/bulkV2"
-        payload = {
-            "sender_id": "TXTIND",
-            "message": f"Your Spam Shield verification OTP is {otp}. It will expire in 2 minutes.",
-            "language": "english",
-            "route": "v3",
-            "numbers": phone_number.replace("+91", ""),
-        }
-        headers = {
+        params = {
             "authorization": FAST2SMS_API_KEY,
-            "Content-Type": "application/json"
+            "route": "otp",
+            "variables_values": otp,
+            "numbers": phone_number.replace("+91", "")
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=10)
-        # Fast2SMS returns status 200 on success for this endpoint
-        return response.status_code == 200
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            print("Fast2SMS OTP sent successfully:", response.text)
+            return True
+        else:
+            print("Fast2SMS OTP send failed:", response.text)
+            return False
     except Exception as e:
-        # Do not call st.error here to keep function pure (callers will report)
+        print("Fast2SMS error:", e)
         return False
 # ---------- END FAST2SMS SECTION ----------
+
 
 
 # Streamlit App Title
