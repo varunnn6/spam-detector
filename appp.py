@@ -11,6 +11,36 @@ from phonenumbers import carrier, geocoder, timezone
 import json
 from google.cloud.firestore_v1 import DocumentReference
 
+# ---------- FAST2SMS OTP VERIFICATION (INSERTED) ----------
+FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
+import time as _otp_time  # local name to avoid shadowing
+
+def send_otp_via_fast2sms(phone_number, otp):
+    """
+    Send OTP via Fast2SMS. Returns True on (likely) success, False otherwise.
+    """
+    try:
+        url = "https://www.fast2sms.com/dev/bulkV2"
+        payload = {
+            "sender_id": "TXTIND",
+            "message": f"Your Spam Shield verification OTP is {otp}. It will expire in 2 minutes.",
+            "language": "english",
+            "route": "v3",
+            "numbers": phone_number.replace("+91", ""),
+        }
+        headers = {
+            "authorization": FAST2SMS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        # Fast2SMS returns status 200 on success for this endpoint
+        return response.status_code == 200
+    except Exception as e:
+        # Do not call st.error here to keep function pure (callers will report)
+        return False
+# ---------- END FAST2SMS SECTION ----------
+
+
 # Streamlit App Title
 st.title("Spam Shield 🛡️")
 
@@ -350,13 +380,44 @@ if page == "Home":
             if name and phone:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
                 if is_valid:
-                    st.session_state.userdata[formatted_phone] = name
-                    save_userdata({formatted_phone: name})
-                    st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+                    import random
+                    otp = str(random.randint(100000, 999999))
+                    sent = send_otp_via_fast2sms(formatted_phone, otp)
+                    if sent:
+                        st.session_state.generated_otp = otp
+                        st.session_state.otp_sent = True
+                        st.session_state.otp_sent_time = _otp_time.time()
+                        st.success(f"OTP sent to {formatted_phone}. It will expire in 2 minutes.")
+                    else:
+                        st.error("Failed to send OTP. Check Fast2SMS API key and credits.")
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
             else:
                 st.warning("Please enter both name and phone number.")
+
+        # OTP input & verification (shown after OTP is sent)
+        if st.session_state.get('otp_sent', False):
+            entered_otp = st.text_input("Enter OTP", type="password", key="otp_input")
+            if st.button("Verify OTP"):
+                # Check expiry (2 minutes = 120 seconds)
+                sent_time = st.session_state.get('otp_sent_time', 0)
+                if _otp_time.time() - sent_time > 120:
+                    st.error("OTP expired after 2 minutes. Please request a new OTP.")
+                    st.session_state.otp_sent = False
+                    st.session_state.generated_otp = None
+                else:
+                    if 'generated_otp' in st.session_state and entered_otp == st.session_state.generated_otp:
+                        formatted_phone, _, _, _, _ = parse_phone_number(phone)
+                        st.session_state.userdata[formatted_phone] = name
+                        save_userdata({formatted_phone: name})
+                        st.success(f"Thank you, {name}! Your number {formatted_phone} is now verified.")
+                        # clear OTP state
+                        st.session_state.otp_sent = False
+                        st.session_state.generated_otp = None
+                        st.session_state.otp_sent_time = None
+                    else:
+                        st.error("Incorrect OTP. Please try again.")
+
 
 # Services Page with Tabs
 elif page == "Services":
