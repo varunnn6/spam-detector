@@ -424,7 +424,7 @@ if page == "Home":
         st.write("Add your name and phone number to be marked as a verified user, helping others trust your number!")
         name = st.text_input("Your Name", key="name_input")
         phone = st.text_input("Your Phone Number (e.g., 91XXXXXXXXXX)", key="phone_input_home")
-         if st.button("Submit Verification"):
+        if st.button("Submit Verification"):
             if name and phone:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone)
                 if is_valid:
