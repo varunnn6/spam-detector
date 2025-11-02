@@ -1,8 +1,7 @@
-# spamshield_with_otp.py
-# Full Spam Shield Streamlit app with Fast2SMS OTP verification.
+# spam_new.py
+# Spam Shield with OTP verification (Fast2SMS integration)
 #
-# Features:
-# - OTP via Fast2SMS (route=otp) using GET URL format required by Fast2SMS docs
+# - OTP via Fast2SMS (route=otp using GET as per Fast2SMS docs)
 # - 6-digit numeric OTP, expires after 120 seconds (2 minutes)
 # - Resend OTP allowed after 60 seconds (countdown shown)
 # - Spinner while sending OTP
@@ -16,49 +15,74 @@
 # Requirements:
 # pip install streamlit phonenumbers firebase-admin joblib requests pandas
 #
-# Put your Firebase service account JSON as 'serviceAccountKey.json' in same directory.
+# IMPORTANT:
+# - Put your Firebase service account JSON as 'serviceAccountKey.json' in same directory
+# - Set your Fast2SMS API key in an environment variable named FAST2SMS_API_KEY,
+#   or put it in Streamlit secrets as FAST2SMS_API_KEY.
+#   Example (Linux/macOS):
+#       export FAST2SMS_API_KEY="your_key_here"
+#
+# Run:
+#   streamlit run spam_new.py
+
+import os
+import re
+import time
+import random
+import json
+import traceback
+from datetime import datetime, timedelta
 
 import streamlit as st
+import pandas as pd
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
-import joblib
 import requests
-import re
-import json
-import random
-import time
-from datetime import datetime, timedelta
-import pandas as pd
-import traceback
+import joblib
 
 # Firebase
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# ----------------------------- Config (edit if necessary) -----------------------------
-# Fast2SMS API key (hardcoded as requested)
-FAST2SMS_API_KEY = "RqVxel3hVmosidQdWpSmgQBI7hN9ROckLEjj1OUs2KKhoMpgSKscU4uWfs48"
-
-# Numlookup API key (replace if you have a different key)
-NUMLOOKUP_API_KEY = "num_live_1DP975acU1UFuYM0qR8oKUWFMDZxq6cz7fx8Qs8P"
+# ---------------- Configuration ----------------
+# Do NOT hardcode your Fast2SMS key here. The app will read from:
+# 1) environment variable FAST2SMS_API_KEY, or
+# 2) st.secrets["FAST2SMS_API_KEY"] if available.
+DEFAULT_NUMLOOKUP_API_KEY = "num_live_1DP975acU1UFuYM0qR8oKUWFMDZq6cz7fx8Qs8P"  # replace if needed
 
 # OTP settings
 OTP_LENGTH = 6
 OTP_EXPIRY_SECONDS = 120    # 2 minutes
-OTP_RESEND_COOLDOWN = 60   # 60 seconds before allowing resend
+OTP_RESEND_COOLDOWN = 60    # 60 seconds before allowing resend
 
-# Filenames for model & vectorizer
+# Model files (if present)
 MODEL_FILE = "spam_classifier.pkl"
 VECTORIZER_FILE = "tfidf_vectorizer.pkl"
 
-# Firebase credential filename (must exist in the project directory)
+# Firebase credential filename
 FIREBASE_CRED_FILENAME = "serviceAccountKey.json"
 
-# ---------------------------------------------------------------------------------------
-
+# ---------------- Streamlit page config ----------------
 st.set_page_config(page_title="Spam Shield 🛡️", layout="wide")
+st.title("Spam Shield 🛡️")
 
-# ----------------------------- Initialize Firebase ------------------------------------
+# ---------------- Read Fast2SMS key ----------------
+def get_fast2sms_key():
+    # Priority: environment variable -> streamlit secrets -> None
+    key = os.environ.get("FAST2SMS_API_KEY")
+    if key:
+        return key
+    try:
+        key = st.secrets.get("FAST2SMS_API_KEY")
+        if key:
+            return key
+    except Exception:
+        pass
+    return None
+
+FAST2SMS_API_KEY = get_fast2sms_key()
+
+# ---------------- Initialize Firebase ----------------
 try:
     if not firebase_admin._apps:
         cred = credentials.Certificate(FIREBASE_CRED_FILENAME)
@@ -68,14 +92,12 @@ try:
 except Exception as e:
     db = None
     firebase_available = False
-    # We'll still continue using session state as fallback
-    st.warning("Warning: Firebase init failed. Using local session state only. "
-               "Check your serviceAccountKey.json and Firestore permissions.")
-    # print error to logs for debugging
+    st.warning("Firebase initialization failed — using session-state fallback. "
+               "Ensure serviceAccountKey.json is present and Firestore rules are configured.")
     print("Firebase init error:", e)
     traceback.print_exc()
 
-# ----------------------------- Session-state initial values ---------------------------
+# ---------------- Session-state defaults ----------------
 if 'userdata' not in st.session_state:
     st.session_state.userdata = {}
 if 'feedback' not in st.session_state:
@@ -87,7 +109,7 @@ if 'parsed_numbers' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state.current_page = "Home"
 
-# OTP session items
+# OTP-related session keys
 if 'otp_code' not in st.session_state:
     st.session_state.otp_code = None
 if 'otp_sent_time' not in st.session_state:
@@ -96,20 +118,18 @@ if 'otp_phone' not in st.session_state:
     st.session_state.otp_phone = None
 if 'otp_name' not in st.session_state:
     st.session_state.otp_name = None
-if 'verified_number' not in st.session_state:
-    st.session_state.verified_number = None
 if 'resend_allowed_time' not in st.session_state:
     st.session_state.resend_allowed_time = None
+if 'verified_number' not in st.session_state:
+    st.session_state.verified_number = None
 
-# ----------------------------- Utilities: Number parsing, Numlookup -------------------
+# ---------------- Utilities: Number parsing / Numlookup ----------------
 @st.cache_data
-def get_numlookup_info(phone_number):
-    """
-    Calls Numlookup API and returns (service_provider, location, line_type, country)
-    """
+def get_numlookup_info(phone_number, api_key=DEFAULT_NUMLOOKUP_API_KEY):
+    """Calls Numlookup API and returns (service_provider, location, line_type, country)"""
     try:
         headers = {"Accept": "application/json"}
-        url = f"https://api.numlookupapi.com/v1/validate/{phone_number}?apikey={NUMLOOKUP_API_KEY}"
+        url = f"https://api.numlookupapi.com/v1/validate/{phone_number}?apikey={api_key}"
         response = requests.get(url, headers=headers, timeout=8)
         response.raise_for_status()
         data = response.json()
@@ -117,6 +137,7 @@ def get_numlookup_info(phone_number):
         location = data.get("location", "Unknown")
         line_type = data.get("line_type", "Unknown")
         country = data.get("country_name", "Unknown")
+        # remove parenthetical extras like "India (+91)"
         country = re.sub(r'\s*\([^)]+\)', '', country).strip()
         return service_provider, location, line_type, country
     except Exception as e:
@@ -133,16 +154,12 @@ def parse_phone_number(phone_number):
     if phone_number in st.session_state.parsed_numbers:
         return st.session_state.parsed_numbers[phone_number]
     try:
-        # normalize: if user enters 10-digit without country, try default country 'IN'
         candidate = phone_number.strip()
-        if candidate.startswith("+"):
+        # Try parse with None, then fallback to 'IN'
+        try:
             parsed = phonenumbers.parse(candidate, None)
-        else:
-            # attempt parse with None first; fallback to "IN"
-            try:
-                parsed = phonenumbers.parse(candidate, None)
-            except phonenumbers.NumberParseException:
-                parsed = phonenumbers.parse(candidate, "IN")
+        except phonenumbers.NumberParseException:
+            parsed = phonenumbers.parse(candidate, "IN")
         if phonenumbers.is_valid_number(parsed):
             formatted_number = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
             service_provider = carrier.name_for_number(parsed, "en") or "Unknown"
@@ -156,11 +173,9 @@ def parse_phone_number(phone_number):
     st.session_state.parsed_numbers[phone_number] = result
     return result
 
-# ----------------------------- Firestore / Local load/save helpers --------------------
+# ---------------- Firestore helpers ----------------
 def load_userdata():
-    """
-    Load first ~100 users from Firestore 'users' collection into session state (if Firestore available).
-    """
+    """Load first ~100 users from Firestore 'users' collection into session state (if Firestore available)."""
     if not db:
         return st.session_state.userdata
     userdata = {}
@@ -173,9 +188,7 @@ def load_userdata():
     return userdata
 
 def save_userdata(userdata):
-    """
-    Save a dict mapping phone->name into Firestore 'users' collection (batch)
-    """
+    """Save a dict mapping phone->name into Firestore 'users' collection (batch)"""
     if not db:
         st.session_state.userdata.update(userdata)
         return
@@ -208,7 +221,6 @@ def save_feedback(feedback):
     try:
         feedback_ref = db.collection('feedback')
         batch = db.batch()
-        # remove old docs, write new ones (keeps indexing stable)
         for doc in feedback_ref.stream():
             batch.delete(doc.reference)
         for i, entry in enumerate(feedback):
@@ -230,10 +242,7 @@ def load_spam_numbers():
     return spam_numbers
 
 def save_spam_number(phone):
-    """
-    Increment spam report count for a phone (in Firestore transaction if available).
-    Returns updated count.
-    """
+    """Increment spam report count for a phone (in Firestore transaction if available). Returns updated count."""
     if not db:
         st.session_state.spam_numbers[phone] = st.session_state.spam_numbers.get(phone, 0) + 1
         return st.session_state.spam_numbers[phone]
@@ -252,22 +261,19 @@ def save_spam_number(phone):
             return new_count
         transaction = db.transaction()
         new_count = update_spam_count(transaction)
-        # verify
         doc = spam_ref.get()
         if doc.exists and doc.to_dict().get('report_count') == new_count:
             return new_count
         else:
-            # fallback
             return st.session_state.spam_numbers.get(phone, new_count)
     except Exception as e:
         print("save_spam_number error:", e)
         return st.session_state.spam_numbers.get(phone, 0)
 
-# ----------------------------- Load initial data into session -------------------------
+# ---------------- Load initial data ----------------
 st.session_state.userdata = load_userdata()
 st.session_state.feedback = load_feedback()
 if 'spam_numbers' not in st.session_state or not st.session_state.spam_numbers:
-    # a modest initial list to bootstrap UI (same format used originally)
     initial_spam_numbers = {
         "+917397947365": 3, "+917550098431": 2, "+919150228347": 5,
         "+918292577122": 1, "+919060883501": 4
@@ -279,7 +285,7 @@ if 'spam_numbers' not in st.session_state or not st.session_state.spam_numbers:
 
 spam_numbers = st.session_state.spam_numbers
 
-# ----------------------------- Load ML model (optional) --------------------------------
+# ---------------- Load ML model (optional) ----------------
 @st.cache_resource
 def load_model_and_vectorizer():
     try:
@@ -292,52 +298,58 @@ def load_model_and_vectorizer():
 
 model, vectorizer = load_model_and_vectorizer()
 
-# ----------------------------- Fast2SMS helper functions --------------------------------
+# ---------------- Fast2SMS helpers ----------------
 def _normalize_number_for_api(phone):
     """
-    Convert +91xxxxxxxxxx, 91xxxxxxxxxx, 0xxxxxxxxxx or xxxxxxxxxx -> accepted format by Fast2SMS URL.
-    Fast2SMS accepts numbers like 919876543210 or 9876543210; we will pass either 10-digit or leading 91 form.
+    Normalize phone for Fast2SMS: output digits only, strip leading zeros.
+    Fast2SMS accepts 10-digit OR 91xxxxxxxxxx style.
     """
     if not phone:
         return ""
     s = re.sub(r"[^\d]", "", str(phone))
-    # strip leading zeros
     s = s.lstrip("0")
-    # if length==12 and startswith 91, keep; if length==10, keep; if length==11 with leading 1? just return digits
     return s
 
-def send_otp_via_fast2sms(phone_number, otp):
+def send_otp_via_fast2sms(phone_number, otp, api_key=None):
     """
-    Send OTP using Fast2SMS OTP route. Uses GET URL per Fast2SMS dev docs.
-    Returns True on likely success; False otherwise.
+    Send OTP using Fast2SMS OTP route using GET method (per docs).
+    Returns True if API returned success-ish response, else False.
     """
+    key = api_key or FAST2SMS_API_KEY
+    if not key:
+        # no key configured
+        print("Fast2SMS key not configured.")
+        return False
     try:
         norm = _normalize_number_for_api(phone_number)
         if not norm:
             return False
-        # Build the URL exactly as required (params in URL)
+        # Build URL using GET query parameters as per Fast2SMS docs
         url = (
-            f"https://www.fast2sms.com/dev/bulkV2?authorization={FAST2SMS_API_KEY}"
+            f"https://www.fast2sms.com/dev/bulkV2?authorization={key}"
             f"&variables_values={otp}&route=otp&flash=0&numbers={norm}"
         )
-        # Send GET request
         resp = requests.get(url, timeout=12)
         print("FAST2SMS DEBUG:", resp.status_code, resp.text)
+        # Try parse JSON, Fast2SMS returns { "return": true/false, ... }
         try:
             j = resp.json()
-            return j.get("return", False)
+            # prefer explicit 'return' boolean if present
+            if isinstance(j, dict) and 'return' in j:
+                return bool(j.get('return'))
+            # fallback: success if status 200 and response text contains 'success' or similar
+            return resp.status_code == 200
         except Exception:
             return resp.status_code == 200
     except Exception as e:
         print("send_otp_via_fast2sms exception:", e)
         return False
 
-# ----------------------------- OTP UI helpers ------------------------------------------
+# ---------------- OTP helpers ----------------
 def _generate_otp():
-    return ''.join(str(random.randint(0,9)) for _ in range(OTP_LENGTH))
+    return ''.join(str(random.randint(0, 9)) for _ in range(OTP_LENGTH))
 
 def _can_resend():
-    # returns True if resend allowed now
     t = st.session_state.get('resend_allowed_time', None)
     if t is None:
         return True
@@ -357,7 +369,7 @@ def _otp_seconds_left():
     left = OTP_EXPIRY_SECONDS - int(time.time() - sent_time)
     return max(left, 0)
 
-# ----------------------------- Navigation Sidebar --------------------------------------
+# ---------------- Sidebar Navigation ----------------
 with st.sidebar:
     st.header("Navigation")
     if st.button("Home", key="nav_home"):
@@ -367,36 +379,29 @@ with st.sidebar:
     if st.button("Feedback", key="nav_feedback"):
         st.session_state.current_page = "Feedback"
     st.markdown("---")
-    st.write("Logged-in (verified):", bool(st.session_state.get('verified_number')))
+    st.write("Verified (session):", bool(st.session_state.get('verified_number')))
 
-# ----------------------------- Verification Gate --------------------------------------
-st.title("Spam Shield 🛡️")
-st.markdown("Protecting you from spam calls and messages — please verify your phone to continue.")
+# ---------------- Verification Gate ----------------
+st.markdown("Protecting you from spam — please verify your phone to continue.")
 
 # If user already verified in session, bypass OTP step
-if st.session_state.get('verified_number'):
-    verified = True
-else:
-    verified = False
+verified = bool(st.session_state.get('verified_number'))
 
-# Verification flow
 if not verified:
     st.subheader("Verify Your Number ✅")
-    name = st.text_input("Your Name", key="verify_name")
-    phone_input = st.text_input("Your Phone Number (accepts +91, 91..., or 10-digit)", key="verify_phone")
+    name_input = st.text_input("Your Name", key="verify_name")
+    phone_input = st.text_input("Your Phone Number (e.g., +91XXXXXXXXXX or 10-digit)", key="verify_phone")
 
-    # Buttons / actions
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Send OTP"):
-            if not name or not phone_input:
+            if not name_input or not phone_input:
                 st.warning("Please enter both name and phone number.")
             else:
                 formatted_phone, _, _, _, is_valid = parse_phone_number(phone_input)
                 if not is_valid:
                     st.error("Invalid phone number. Please enter a valid number (include country code or enter 10-digit).")
                 else:
-                    # generate OTP and send
                     otp = _generate_otp()
                     with st.spinner("Please wait — sending OTP..."):
                         sent = send_otp_via_fast2sms(formatted_phone, otp)
@@ -404,26 +409,25 @@ if not verified:
                         st.session_state.otp_code = otp
                         st.session_state.otp_sent_time = time.time()
                         st.session_state.otp_phone = formatted_phone
-                        st.session_state.otp_name = name
+                        st.session_state.otp_name = name_input
                         st.session_state.resend_allowed_time = time.time() + OTP_RESEND_COOLDOWN
                         st.success(f"OTP sent to {formatted_phone}. It will expire in 2 minutes.")
                     else:
-                        # show helpful hint for debugging
-                        st.error("Failed to send OTP. Check Fast2SMS API key, route permissions, or account credits.")
-                        st.write("Tip: Verify in the Fast2SMS dashboard that your API key has the OTP route enabled.")
+                        st.error("Failed to send OTP. Check Fast2SMS API key and credits or Fast2SMS console.")
+                        st.write("Tip: If using a trial key, ensure the recipient number is whitelisted in Fast2SMS dashboard.")
+
     with col2:
-        # Resend (only shown when allowed)
         if not _can_resend():
             st.write(f"Resend available in {_resend_seconds_left()}s")
         else:
             if st.button("Resend OTP"):
-                # allow resend only if previous OTP isn't active or allowed time reached
                 if not st.session_state.get('otp_phone'):
-                    st.warning("No OTP request found — click Send OTP first.")
+                    st.warning("No previous OTP request found — click Send OTP first.")
                 else:
-                    formatted_phone, _, _, _, is_valid2 = parse_phone_number(st.session_state.otp_phone)
-                    if not is_valid2:
-                        st.error("Internal: stored phone is invalid. Please request a new OTP.")
+                    # Resend new OTP
+                    formatted_phone, _, _, _, ok = parse_phone_number(st.session_state.otp_phone)
+                    if not ok:
+                        st.error("Stored phone is invalid. Request a new OTP with Send OTP.")
                     else:
                         otp2 = _generate_otp()
                         with st.spinner("Resending OTP..."):
@@ -436,30 +440,30 @@ if not verified:
                         else:
                             st.error("Failed to resend OTP. Check Fast2SMS/Balances.")
 
-    # Show OTP input if OTP was sent
+    # If OTP exists, show entry box
     if st.session_state.get('otp_code'):
         st.markdown("---")
         st.write("Enter the OTP you received on your phone.")
         otp_entered = st.text_input("OTP", key="otp_input_field", type="password")
         if st.button("Verify OTP"):
-            # check expiry
             if st.session_state.get('otp_sent_time') is None:
                 st.error("No OTP has been sent. Click Send OTP first.")
             else:
                 elapsed = time.time() - st.session_state.otp_sent_time
                 if elapsed > OTP_EXPIRY_SECONDS:
                     st.error("OTP expired — please resend and try again.")
-                    # clear OTP
+                    # clear OTP state
                     st.session_state.otp_code = None
                     st.session_state.otp_sent_time = None
                     st.session_state.otp_phone = None
                     st.session_state.otp_name = None
                     st.session_state.resend_allowed_time = None
                 else:
-                    if otp_entered == st.session_state.otp_code:
+                    # accept numeric otp entered as string or int
+                    if str(otp_entered).strip() == str(st.session_state.otp_code):
                         # Verified - save to Firestore 'users'
                         formatted_phone, _, _, _, _ = parse_phone_number(st.session_state.otp_phone)
-                        name_to_save = st.session_state.otp_name
+                        name_to_save = st.session_state.otp_name or name_input
                         try:
                             if db:
                                 db.collection('users').document(formatted_phone).set({
@@ -467,16 +471,15 @@ if not verified:
                                     'verified': True,
                                     'verified_at': firestore.SERVER_TIMESTAMP
                                 })
-                            # also store in session userdata for instant use
                             st.session_state.userdata[formatted_phone] = name_to_save
                             save_userdata({formatted_phone: name_to_save})
                             st.success(f"✅ Verified! Thank you, {name_to_save}. You now have access.")
                         except Exception as e:
                             st.error(f"Verified but failed to save to Firestore: {e}. Saved locally instead.")
                             st.session_state.userdata[formatted_phone] = name_to_save
-                        # mark verified in session
+
                         st.session_state.verified_number = formatted_phone
-                        # clear OTP sensitive state
+                        # Clear sensitive OTP state
                         st.session_state.otp_code = None
                         st.session_state.otp_sent_time = None
                         st.session_state.otp_phone = None
@@ -492,54 +495,49 @@ if not verified:
         else:
             st.warning("OTP has likely expired. Please resend.")
 
-    # block main app until verified
+    # Prevent access until verified
     st.stop()
 
-# ----------------------------- Main App: user is verified --------------------------------
-# At this point we have a verified user (st.session_state.verified_number)
-try:
-verified_phone = st.session_state.verified_number
-except Exception:
-    verified_phone = None
-
-if verified_phone:
-    st.success(f"Access granted for {verified_phone} ✅")
-else:
-    # Safety: shouldn't happen because of st.stop() above, but keep guard
-    st.error("No verified user found — restart verification.")
+# ---------------- Main App (user verified) ----------------
+verified_phone = st.session_state.get('verified_number', None)
+if not verified_phone:
+    st.error("No verified user found — restart verification flow.")
     st.stop()
 
-# Recreate original UI features but gated: Home, Services, Feedback
+st.success(f"Access granted for {verified_phone} ✅")
+
+# Basic navigation
 page = st.session_state.current_page
 
-# Home tab example & verify display
+# ---------------- Home Page ----------------
 if page == "Home":
-    tab1, tab2 = st.tabs(["Introduction", "Verify Info"])
+    tab1, tab2 = st.tabs(["Introduction", "My Verified Info"])
     with tab1:
         st.header("Welcome to Spam Shield ⚔️")
         st.write("""
-            **Spam Shield** protects against spam calls and text messages.
-            Verify your number to contribute by reporting spam numbers and using the lookup tools.
+            **Spam Shield** helps protect you from spam calls and messages.
+            Verify your number to use features like lookup, reporting, and ML-based message classification.
         """)
+        st.write("You are verified — thank you for helping build a trusted community!")
     with tab2:
         st.header("Your Verified Info")
         name_for_display = st.session_state.userdata.get(verified_phone, "Unknown")
         st.write(f"**Name:** {name_for_display}")
         st.write(f"**Verified Phone:** {verified_phone}")
 
-# Services page with Search, Spam detection, Report
+# ---------------- Services Page ----------------
 elif page == "Services":
     tab1, tab2, tab3 = st.tabs(["🔍 Search Number", "💬 Check Spam Message", "🚨 Report Spam"])
 
-    # SEARCH NUMBER
+    # Search Number
     with tab1:
         st.header("Search a Number 🔍")
-        phone_input = st.text_input("Enter phone number to check (e.g., +91 1234567890):", key="services_phone_input")
+        phone_query = st.text_input("Enter phone number to check (e.g., +91 1234567890):", key="services_phone_input")
         if st.button("Search", key="search_button"):
-            if not phone_input.strip():
+            if not phone_query.strip():
                 st.warning("Please enter a phone number.")
             else:
-                formatted_number, local_provider, region, time_zone, is_valid_n = parse_phone_number(phone_input)
+                formatted_number, local_provider, region, time_zone, is_valid_n = parse_phone_number(phone_query)
                 if not is_valid_n:
                     st.error("Invalid phone number. Please enter a valid number.")
                 else:
@@ -556,7 +554,7 @@ elif page == "Services":
                         classification = "🚨 Spam"
                         report_count = spam_numbers[formatted_number]
                         is_reported_spam = True
-                    # heuristics retained from original
+                    # heuristics
                     if number_without_country.startswith("14"):
                         classification = "🚨 Spam"
                     elif number_without_country.startswith("88265"):
@@ -578,7 +576,7 @@ elif page == "Services":
                     displayed_provider = api_provider if api_provider != "Unknown" else local_provider
                     st.write(f"📶 **Service Provider:** {displayed_provider}")
                     if displayed_provider != "Unknown":
-                        st.write("Note: Provider may vary due to MNP.")
+                        st.write("Note: Provider may vary due to number portability.")
                     st.write(f"🌍 **Region/City:** {location if location != 'Unknown' else region}")
                     st.write(f"⏰ **Time Zone:** {time_zone}")
                     st.write(f"📞 **Line Type:** {line_type}")
@@ -587,7 +585,7 @@ elif page == "Services":
                     if is_reported_spam:
                         st.write(f"⚠️ **This number has been reported {report_count} times.**")
 
-    # CHECK SPAM MESSAGE
+    # Check Spam Message (ML)
     with tab2:
         st.header("Check Spam Messages 💬")
         user_message = st.text_area("Enter message text to check:", key="sms_input", height=140)
@@ -633,7 +631,7 @@ elif page == "Services":
                 if spam_keyword_count > 0 and result == "🚨 Spam":
                     st.warning(f"⚠️ Classified as spam due to {spam_keyword_count} suspicious keyword(s).")
 
-    # REPORT SPAM
+    # Report Spam
     with tab3:
         st.header("Report a Spam Number ⚠️")
         spam_input = st.text_input("Enter phone number to report as spam:", key="report_input")
@@ -654,7 +652,7 @@ elif page == "Services":
                 else:
                     st.error("Invalid phone number. Please enter a valid number.")
 
-# Feedback page
+# ---------------- Feedback Page ----------------
 elif page == "Feedback":
     st.header("📝 Submit Feedback")
     feedback_text = st.text_area("Please provide your feedback 😇:", key="feedback_input")
@@ -666,8 +664,8 @@ elif page == "Feedback":
         else:
             st.warning("Please enter some feedback.")
 
-# Fallback: if page unknown
+# ---------------- Fallback ----------------
 else:
     st.write("Unknown page. Use sidebar to navigate.")
 
-# ----------------------------- End of app ---------------------------------------------
+# ---------------- End ----------------
